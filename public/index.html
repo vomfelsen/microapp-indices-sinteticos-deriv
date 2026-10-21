@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deriv SynthQuant Pro — Señales ICT, Estrategias, RBAC & Bitácora en Tiempo Real</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <!-- TOP NAVIGATION BAR -->
+  <header class="app-topbar">
+    <div class="brand-block">
+      <div class="brand-logo" aria-hidden="true">D⚡</div>
+      <div>
+        <h1 class="brand-title">
+          Deriv SynthQuant <span class="badge badge-ict">ICT + API v3</span>
+        </h1>
+        <p class="brand-subtitle">Señales en Índices Sintéticos · Motor de Estrategias · RBAC Auth · Bitácora SL/TP Live</p>
+      </div>
+    </div>
+
+    <nav class="topbar-nav" aria-label="Navegación Principal">
+      <button type="button" class="nav-tab active" data-view="view-signals">
+        📡 Señales &amp; Tracking Vivo
+        <span id="badgeOpenTrades" class="nav-badge live-pulse">1</span>
+      </button>
+      <button type="button" class="nav-tab" data-view="view-strategies">
+        🧠 Motor Estrategias &amp; ICT
+        <span id="badgeStrategiesCount" class="nav-badge">6</span>
+      </button>
+      <button type="button" class="nav-tab" data-view="view-journal">
+        📓 Bitácora &amp; Psicotrading
+      </button>
+      <button type="button" class="nav-tab" data-view="view-users">
+        🔐 Usuarios, Registro &amp; Roles
+      </button>
+      <button type="button" class="nav-tab" data-view="view-deriv-api">
+        🔌 Deriv API &amp; Índices
+      </button>
+    </nav>
+
+    <div class="topbar-right">
+      <div id="wsStatusPill" class="ws-pill" title="Estado del flujo de datos de Deriv">
+        <span class="ws-dot"></span>
+        <span id="wsStatusText">Deriv Feed Activo</span>
+      </div>
+
+      <div class="user-pill">
+        <div id="topUserAvatar" class="user-avatar">WA</div>
+        <div>
+          <div id="topUserName" style="font-weight: 700; font-size: 0.8rem;">Will Admin</div>
+          <div id="topUserRoleBadge" style="font-size: 0.68rem; color: var(--accent-primary);">Super Admin</div>
+        </div>
+        <button type="button" id="btnOpenAuthModal" class="btn btn-outline btn-sm" style="margin-left: 0.35rem;">
+          Cambiar / Login
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- LIVE SYNTHETIC INDICES TICKER TAPE -->
+  <div id="liveTickerTape" class="ticker-tape" aria-label="Cotizaciones en tiempo real de Índices Sintéticos Deriv"></div>
+
+  <!-- MAIN WORKSPACE CONTAINER -->
+  <main class="main-container">
+    <!-- ====================================================================
+         VIEW 1: TERMINAL DE SEÑALES, GRÁFICO ICT & TRACKING SL/TP EN VIVO
+         ==================================================================== -->
+    <section id="view-signals" class="view-section active">
+      <!-- Top KPI Strip -->
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <span class="kpi-label">Índices Suscritos por Usuario</span>
+          <span id="kpiSubscribedCount" class="kpi-value" style="color: var(--accent-primary);">8 / 22</span>
+          <span class="kpi-sub">Recibiendo señales en tiempo real</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Operaciones Activas (Tracking SL/TP)</span>
+          <span id="kpiActiveTrades" class="kpi-value" style="color: var(--buy-green);">1 En Curso</span>
+          <span id="kpiFloatingPnl" class="kpi-sub">PnL Flotante: +$12.10 (+0.48R)</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Límite Diario de Entradas (Bitácora)</span>
+          <span id="kpiDailyEntries" class="kpi-value">1 / 4</span>
+          <span id="kpiDailyLosses" class="kpi-sub">Pérdidas hoy: 0 / 2 máx permitidas</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Efectividad Media Estrategias Activas</span>
+          <span id="kpiAvgWinrate" class="kpi-value" style="color: #34d399;">75.6%</span>
+          <span class="kpi-sub">Confluencia ICT Silver Bullet + Spike Hunter</span>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- LEFT COLUMN: SELECTOR DE ÍNDICES SINTÉTICOS DERIV -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">🎯 Mis Índices Deriv (Recibir Señales)</h2>
+            <select id="filterSubmarketSelect" aria-label="Filtrar por categoría de índice" style="background:#09101f;color:#fff;border:1px solid var(--border-subtle);padding:0.3rem 0.5rem;border-radius:6px;font-size:0.76rem;">
+              <option value="all">Todos (22 Índices)</option>
+              <option value="continuous_indices">Volatility (10-100 &amp; 1s)</option>
+              <option value="crash_index">Boom &amp; Crash (Spikes)</option>
+              <option value="jump_index">Jump Indices (JD25-100)</option>
+              <option value="step_index">Step &amp; Range Break</option>
+            </select>
+          </div>
+          <p style="margin: 0 0 0.75rem; font-size: 0.77rem; color: var(--text-muted);">
+            Marca la casilla <strong>🔔 Recibir</strong> para suscribirte a las señales de ese índice sintético. Haz clic en cualquier fila para inspeccionar su gráfico ICT en vivo.
+          </p>
+          <div id="symbolSelectorList" style="max-height: 620px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.45rem;"></div>
+        </div>
+
+        <!-- CENTER COLUMN: LIVE CHART WITH ICT FVG/OB + ACTIVE TRADES SL/TP PROGRESS BARS -->
+        <div style="display: flex; flex-direction: column; gap: 1.15rem;">
+          <!-- Interactive Candlestick Chart + ICT Overlays -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 id="chartSymbolTitle" class="panel-title">📈 Volatility 75 Index (R_75) — Estructura ICT &amp; Niveles</h2>
+                <div id="chartSymbolMeta" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem;">
+                  Pip: 0.01 · Spread: 18.50 · Velocidad: 2s/tick · Zona ICT: Calculando...
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;">
+                <span id="chartLivePriceBadge" class="badge badge-buy" style="font-size: 0.88rem; font-family: monospace;">148,520.40</span>
+                <button type="button" id="btnGenerateSignalNow" class="btn btn-primary btn-sm">
+                  ⚡ Escanear Señal Ahora
+                </button>
+              </div>
+            </div>
+
+            <div class="chart-canvas-wrap">
+              <canvas id="derivChartCanvas" width="760" height="350"></canvas>
+            </div>
+
+            <div id="ictAnalysisStrip" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.65rem; border-top: 1px solid var(--border-subtle); font-size: 0.76rem;"></div>
+          </div>
+
+          <!-- REAL-TIME TRACKING OF TAKEN SIGNALS (SL <-> ENTRY <-> TP LIVE BAR) -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">🛰️ Seguimiento en Tiempo Real (Barra Viva SL ◄───► TP)</h2>
+                <p style="margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--text-muted);">
+                  Conectado a los ticks en vivo de Deriv. Si la barra toca <strong>SL (0%)</strong> o <strong>TP (100%)</strong> se actualiza automáticamente el estado en tu bitácora.
+                </p>
+              </div>
+              <span class="badge badge-ict">AUTO-TRIGGER SL/TP ACTIVO</span>
+            </div>
+            <div id="liveActiveTradesContainer"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: FEED DE SEÑALES GENERADAS EN TUS ÍNDICES -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🔥 Señales en Tus Índices</h2>
+              <p style="margin: 0.1rem 0 0; font-size: 0.74rem; color: var(--text-muted);">
+                Filtradas según tus índices seleccionados y estrategias activas
+              </p>
+            </div>
+            <div style="display: flex; gap: 0.35rem;">
+              <label style="font-size: 0.74rem; display: flex; align-items: center; gap: 0.3rem; cursor: pointer;">
+                <input type="checkbox" id="chkOnlySubscribedSignals" checked />
+                Solo mis índices
+              </label>
+            </div>
+          </div>
+
+          <div id="signalsFeedContainer" style="max-height: 760px; overflow-y: auto;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         VIEW 2: MOTOR DE CREACIÓN DE ESTRATEGIAS + ICT PRECONFIGURADAS
+         ==================================================================== -->
+    <section id="view-strategies" class="view-section">
+      <div class="two-col-grid">
+        <!-- Prebuilt & Saved Strategies -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🏆 Estrategias de Alta Efectividad &amp; ICT Incluidas</h2>
+              <p style="margin: 0.15rem 0 0; font-size: 0.77rem; color: var(--text-muted);">
+                Activa o desactiva qué estrategias alimentan el generador de señales en tiempo real o ejecuta un Backtest sobre velas reales de Deriv.
+              </p>
+            </div>
+          </div>
+          <div id="strategiesListContainer" style="display: flex; flex-direction: column; gap: 0.85rem;"></div>
+        </div>
+
+        <!-- Custom Strategy Builder Engine -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">⚙️ Motor Constructor de Estrategias (ICT / SMC / Indicadores)</h2>
+              <p style="margin: 0.15rem 0 0; font-size: 0.77rem; color: var(--text-muted);">
+                Diseña tu propia estrategia combinando confluencias institucionales ICT y filtros cuantitativos para Índices Sintéticos.
+              </p>
+            </div>
+          </div>
+
+          <form id="customStrategyForm" action="/api/strategies" method="POST" novalidate>
+            <fieldset>
+              <legend>1. Identidad y Mercado Objetivo</legend>
+              <div class="field">
+                <label for="stratName">Nombre de la Estrategia *</label>
+                <span id="stratNameHint" class="hint">Ej: ICT London Killzone + FVG V75 Sniper</span>
+                <input
+                  type="text"
+                  id="stratName"
+                  name="stratName"
+                  required
+                  minlength="4"
+                  aria-describedby="stratNameHint"
+                  placeholder="Nombre descriptivo de tu estrategia"
+                />
+                <div class="error-msg">❌ Ingresa un nombre de al menos 4 caracteres.</div>
+              </div>
+
+              <div class="two-col-grid" style="gap: 0.8rem;">
+                <div class="field">
+                  <label for="stratCategory">Categoría Metodológica</label>
+                  <select id="stratCategory" name="stratCategory">
+                    <option value="ICT / Smart Money">ICT / Smart Money Concepts (SMC)</option>
+                    <option value="Caza Spikes">Caza Spikes (Boom &amp; Crash)</option>
+                    <option value="Tendencial / Cuantitativa">Tendencial / Indicadores (EMA + RSI)</option>
+                    <option value="Breakout / Volatilidad">Breakout / Saltos (Jump &amp; Step)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="stratTimeframe">Temporalidad Principal</label>
+                  <select id="stratTimeframe" name="stratTimeframe">
+                    <option value="M1">M1 (Scalping / Spikes 1 min)</option>
+                    <option value="M5" selected>M5 (Intradía / Silver Bullet 5 min)</option>
+                    <option value="M15">M15 (Estructura Intradía 15 min)</option>
+                    <option value="H1">H1 (Swing Sintéticos 1 hora)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field" style="margin-bottom: 0.3rem;">
+                <label>Submercados de Deriv Compatibles</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; margin-top: 0.3rem; font-size: 0.8rem;">
+                  <label style="font-weight: 500;"><input type="checkbox" name="stratSubmarket" value="continuous_indices" checked /> Volatility Indices (V10-V100)</label>
+                  <label style="font-weight: 500;"><input type="checkbox" name="stratSubmarket" value="crash_index" checked /> Boom &amp; Crash (300/500/1000)</label>
+                  <label style="font-weight: 500;"><input type="checkbox" name="stratSubmarket" value="jump_index" checked /> Jump Indices (JD25-JD100)</label>
+                  <label style="font-weight: 500;"><input type="checkbox" name="stratSubmarket" value="step_index" /> Step &amp; Range Break</label>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>2. Reglas de Confluencia (ICT + Indicadores Técnicos)</legend>
+              <span class="hint">Selecciona las condiciones que deben cumplirse para disparar la señal:</span>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; font-size: 0.8rem; margin-top: 0.4rem;">
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Liquidity Sweep (SSL / BSL)" checked /> Liquidity Sweep (Barrido SSL/BSL)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Fair Value Gap (FVG Imbalance)" checked /> Fair Value Gap (FVG / Imbalance)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Mitigación de Order Block (OB)" checked /> Order Block Institucional (OB)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Market Structure Shift (MSS / CHOCH)" /> Market Structure Shift (MSS/CHOCH)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Retroceso OTE (61.8% - 78.6% Fib)" /> Zona OTE Fibonacci (61.8% - 78.6%)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Filtro Matriz Premium / Discount (<50% / >50%)" /> Matriz Premium / Discount ICT</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Agotamiento RSI(14) (<20 / >80)" /> RSI(14) Extremo (&lt;20 o &gt;80 Spikes)</label>
+                <label style="font-weight:500;"><input type="checkbox" name="stratCond" value="Alineación Fractal EMA 20 / 50 / 200" /> Alineación EMA 20 / 50 / 200</label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>3. Parámetros de Riesgo:Beneficio y Stop Loss Automático</legend>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+                <div class="field" style="margin-bottom: 0;">
+                  <label for="stratRR">Ratio R:R Objetivo</label>
+                  <select id="stratRR" name="stratRR">
+                    <option value="2.0">1 : 2.0 (Conservador)</option>
+                    <option value="2.5">1 : 2.5 (Balanceado)</option>
+                    <option value="3.0" selected>1 : 3.0 (ICT Estándar)</option>
+                    <option value="3.5">1 : 3.5 (Sniper Pro)</option>
+                    <option value="4.0">1 : 4.0 ( Institucional)</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-bottom: 0;">
+                  <label for="stratAtrMult">Distancia SL (ATR x)</label>
+                  <select id="stratAtrMult" name="stratAtrMult">
+                    <option value="1.0">1.0x ATR (Ajustado)</option>
+                    <option value="1.35" selected>1.35x ATR (Óptimo)</option>
+                    <option value="1.8">1.8x ATR (Holgado V75)</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-bottom: 0;">
+                  <label for="stratMinConf">Confianza Mínima (%)</label>
+                  <input type="number" id="stratMinConf" name="stratMinConf" value="80" min="60" max="95" required />
+                </div>
+              </div>
+
+              <div class="field" style="margin-top: 0.85rem; margin-bottom: 0;">
+                <label for="stratDesc">Notas Operativas / Reglas de la Estrategia</label>
+                <textarea id="stratDesc" name="stratDesc" rows="2" placeholder="Describe en qué horario o condición de mercado prefieres operar esta estrategia..."></textarea>
+              </div>
+            </fieldset>
+
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+              <button type="submit" class="btn btn-primary">
+                ➕ Guardar y Activar Estrategia en el Motor
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         VIEW 3: BITÁCORA DE TRADING, REGLAS DIARIAS, CHECKLIST & PSICOTRADING
+         ==================================================================== -->
+    <section id="view-journal" class="view-section">
+      <!-- Journal Selector & Daily Risk Rules Header -->
+      <div class="panel" style="margin-bottom: 1.2rem;">
+        <div class="panel-header">
+          <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+            <h2 class="panel-title">📓 Bitácora Activa:</h2>
+            <select id="activeJournalSelect" aria-label="Seleccionar bitácora activa" style="background:#09101f;color:#38bdf8;border:1px solid var(--border-highlight);padding:0.45rem 0.85rem;border-radius:8px;font-weight:700;font-size:0.88rem;"></select>
+            <button type="button" id="btnOpenNewJournalModal" class="btn btn-outline btn-sm">
+              ➕ Crear Nueva Bitácora
+            </button>
+            <button type="button" id="btnOpenManualTradeModal" class="btn btn-primary btn-sm">
+              ✍️ Registrar Operación Manual
+            </button>
+            <button type="button" id="btnExportJournalCsv" class="btn btn-outline btn-sm">
+              ⬇️ Exportar CSV
+            </button>
+          </div>
+          <div id="journalGuardStatusBadge"></div>
+        </div>
+
+        <!-- KPIs of Active Journal -->
+        <div id="journalStatsKpiRow" class="kpi-row" style="margin-bottom: 0;"></div>
+      </div>
+
+      <!-- Configuration of Daily Rules, Checklist & Psychotrading Analytics -->
+      <div class="two-col-grid" style="margin-bottom: 1.2rem;">
+        <!-- Left: Configuración de Bitácora (Entradas al día, Pérdidas al día, Riesgo) -->
+        <div class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">🛡️ Configuración de Bitácora y Límites Diarios de Riesgo</h3>
+            <span class="badge badge-ict">PLAN DE TRADING</span>
+          </div>
+          <form id="journalConfigForm" action="/api/journal/config" method="POST">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.85rem;">
+              <div class="field">
+                <label for="jcfgName">Nombre de la Bitácora</label>
+                <input type="text" id="jcfgName" name="jcfgName" required />
+              </div>
+              <div class="field">
+                <label for="jcfgBalance">Capital Base Inicial ($ USD)</label>
+                <input type="number" id="jcfgBalance" name="jcfgBalance" step="50" min="10" required />
+              </div>
+              <div class="field">
+                <label for="jcfgMaxTrades">Máximo de Entradas Permitidas al Día</label>
+                <span class="hint">Bloquea sobre-operación (Overtrading) al cumplirse</span>
+                <input type="number" id="jcfgMaxTrades" name="jcfgMaxTrades" min="1" max="50" required />
+              </div>
+              <div class="field">
+                <label for="jcfgMaxLosses">Máximo de Pérdidas Permitidas al Día</label>
+                <span class="hint">Frena el trading por revancha tras rachas negativas</span>
+                <input type="number" id="jcfgMaxLosses" name="jcfgMaxLosses" min="1" max="20" required />
+              </div>
+              <div class="field">
+                <label for="jcfgRiskPct">Riesgo Estándar por Operación (%)</label>
+                <input type="number" id="jcfgRiskPct" name="jcfgRiskPct" step="0.25" min="0.1" max="10" required />
+              </div>
+              <div class="field">
+                <label for="jcfgMinChecklist">Cumplimiento Mínimo del Checklist (%)</label>
+                <input type="number" id="jcfgMinChecklist" name="jcfgMinChecklist" min="0" max="100" step="5" required />
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.25rem;">
+              <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer;">
+                <input type="checkbox" id="jcfgStrictGuard" name="jcfgStrictGuard" checked />
+                Activar Bloqueo Estricto si alcanzo el límite de entradas/pérdidas diarias o incumplo el Checklist
+              </label>
+              <button type="submit" class="btn btn-primary btn-sm">💾 Guardar Parámetros de Bitácora</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Right: Pre-Trade Checklist Manager & Psychotrading Mood Breakdown -->
+        <div class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">✅ Checklist Pre-Trade Obligatorio &amp; Psicotrading</h3>
+          </div>
+          <p style="margin: 0 0 0.65rem; font-size: 0.77rem; color: var(--text-muted);">
+            Estos puntos se verifican cada vez que tomas una señal o registras una entrada en tu bitácora:
+          </p>
+          <div id="checklistConfigItems" style="display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.75rem; max-height: 175px; overflow-y: auto;"></div>
+
+          <form id="addChecklistForm" action="/api/journal/checklist" method="POST" style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+            <input
+              type="text"
+              id="newChecklistText"
+              name="newChecklistText"
+              placeholder="Añadir nueva regla a tu checklist (ej. No operar contra tendencia H1)..."
+              required
+              style="flex: 1; padding: 0.45rem 0.7rem; background: #09101f; border: 1px solid var(--border-subtle); color: #fff; border-radius: 6px;"
+            />
+            <button type="submit" class="btn btn-outline btn-sm">➕ Añadir Regla</button>
+          </form>
+
+          <div style="border-top: 1px solid var(--border-subtle); padding-top: 0.75rem;">
+            <h4 style="margin: 0 0 0.45rem; font-size: 0.82rem; color: var(--accent-primary);">
+              🧠 Rendimiento según Estado de Ánimo / Emoción (Psicotrading)
+            </h4>
+            <div id="moodAnalyticsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full Traditional Trading Journal Table with Live SL/TP Bars -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">📊 Historial y Seguimiento en Tiempo Real de la Bitácora</h3>
+            <p style="margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--text-muted);">
+              Incluye barra de progreso SL/TP en tiempo real, sentimiento de mercado, estado de ánimo, cumplimiento del checklist y notas.
+            </p>
+          </div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Fecha / Sesión</th>
+                <th>Índice / Dir</th>
+                <th>Estrategia / TF</th>
+                <th>Precios (Entrada / SL / TP)</th>
+                <th style="min-width: 240px;">Seguimiento Vivo SL ◄──► TP</th>
+                <th>Estado</th>
+                <th>Riesgo / PnL ($)</th>
+                <th>Sentimiento &amp; Estado de Ánimo</th>
+                <th>Checklist &amp; Notas</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="journalTradesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         VIEW 4: GESTIÓN DE USUARIOS, REGISTRO NIVEL 5, GOOGLE LOGIN & RBAC
+         ==================================================================== -->
+    <section id="view-users" class="view-section">
+      <div class="two-col-grid" style="margin-bottom: 1.25rem;">
+        <!-- High-Security Registration Form + Google OAuth -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">🛡️ Registro de Usuario de Alta Seguridad (Nivel 5 + Google OAuth)</h2>
+              <p style="margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--text-muted);">
+                Hashing criptográfico PBKDF2 / SHA-256 con salt único, validación de entropía en tiempo real, 2FA TOTP y acceso federado con Google.
+              </p>
+            </div>
+          </div>
+
+          <!-- Official Google OAuth 2.0 Sign-In Action -->
+          <div style="margin-bottom: 1rem;">
+            <button type="button" id="btnGoogleSignInDirect" class="btn btn-google">
+              <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              </svg>
+              Continuar / Registrarse con Google (OAuth 2.0)
+            </button>
+          </div>
+
+          <div style="text-align: center; color: var(--text-muted); font-size: 0.75rem; margin: 0.7rem 0;">
+            — O REGISTRO CRIPTOGRÁFICO CON TODOS LOS NIVELES DE SEGURIDAD —
+          </div>
+
+          <form id="secureRegisterForm" action="/api/auth/register" method="POST" novalidate>
+            <fieldset>
+              <legend>Datos de Identidad y Rol</legend>
+              <div class="two-col-grid" style="gap: 0.8rem;">
+                <div class="field">
+                  <label for="regName">Nombre Completo *</label>
+                  <span id="regNameHint" class="hint">Mínimo 3 caracteres</span>
+                  <input
+                    type="text"
+                    id="regName"
+                    name="regName"
+                    autocomplete="name"
+                    required
+                    minlength="3"
+                    aria-describedby="regNameHint"
+                    placeholder="Ej. Andrés Morales"
+                  />
+                  <div class="error-msg">❌ Ingresa tu nombre completo (mínimo 3 caracteres).</div>
+                </div>
+
+                <div class="field">
+                  <label for="regEmail">Correo Electrónico *</label>
+                  <span id="regEmailHint" class="hint">Formato: usuario@dominio.com</span>
+                  <input
+                    type="email"
+                    id="regEmail"
+                    name="regEmail"
+                    autocomplete="email"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    required
+                    aria-describedby="regEmailHint"
+                    placeholder="trader@ejemplo.com"
+                  />
+                  <div class="error-msg">❌ Ingresa un correo electrónico válido.</div>
+                </div>
+              </div>
+
+              <!-- Role Choice: fewer than 6 options -> visible radio buttons per modern-web-guidance Selection Control Matrix -->
+              <div class="field" style="margin-bottom: 0.25rem;">
+                <label>Rol y Nivel de Acceso Inicial (RBAC)</label>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.45rem; margin-top: 0.35rem; font-size: 0.8rem;">
+                  <label style="font-weight: 500; display: flex; align-items: center; gap: 0.4rem;">
+                    <input type="radio" name="regRole" value="trader_vip" checked />
+                    Trader Pro / VIP (Señales + Bitácora)
+                  </label>
+                  <label style="font-weight: 500; display: flex; align-items: center; gap: 0.4rem;">
+                    <input type="radio" name="regRole" value="strategist" />
+                    Analista ICT / Strategist (Creador)
+                  </label>
+                  <label style="font-weight: 500; display: flex; align-items: center; gap: 0.4rem;">
+                    <input type="radio" name="regRole" value="super_admin" />
+                    Super Admin (Control Total)
+                  </label>
+                  <label style="font-weight: 500; display: flex; align-items: center; gap: 0.4rem;">
+                    <input type="radio" name="regRole" value="viewer" />
+                    Viewer (Solo Lectura)
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Seguridad de Contraseña (5 Niveles + Entropía) y 2FA</legend>
+              <div class="field">
+                <label for="regPassword">Contraseña Criptográfica *</label>
+                <!-- Rules placed ABOVE input per modern-web-guidance validate-input-after-interaction -->
+                <ul id="regPasswordRules" class="rules-list">
+                  <li id="ruleLen">Mínimo 10 caracteres de longitud</li>
+                  <li id="ruleCase">Al menos una mayúscula (A-Z) y una minúscula (a-z)</li>
+                  <li id="ruleNum">Al menos un número (0-9)</li>
+                  <li id="ruleSpec">Al menos un carácter especial (!@#$%^&amp;*)</li>
+                  <li id="ruleCommon">Sin patrones triviales (alta entropía criptográfica)</li>
+                </ul>
+                <input
+                  type="password"
+                  id="regPassword"
+                  name="regPassword"
+                  autocomplete="new-password"
+                  required
+                  minlength="10"
+                  pattern="(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[\W_]).{10,}"
+                  aria-describedby="regPasswordRules"
+                  placeholder="••••••••••••"
+                />
+                <div class="error-msg">❌ La contraseña debe cumplir los 5 requisitos de seguridad.</div>
+
+                <div class="pwd-meter-bars" aria-hidden="true">
+                  <div id="pwdBar1" class="pwd-bar"></div>
+                  <div id="pwdBar2" class="pwd-bar"></div>
+                  <div id="pwdBar3" class="pwd-bar"></div>
+                  <div id="pwdBar4" class="pwd-bar"></div>
+                  <div id="pwdBar5" class="pwd-bar"></div>
+                </div>
+                <div id="pwdStrengthText" style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.25rem;">
+                  Fortaleza: Sin ingresar (0 bits de entropía)
+                </div>
+              </div>
+
+              <div class="two-col-grid" style="gap: 0.8rem;">
+                <div class="field" style="margin-bottom: 0.3rem;">
+                  <label for="regPasswordConfirm">Confirmar Contraseña *</label>
+                  <span id="regConfirmHint" class="hint">Debe coincidir exactamente</span>
+                  <input
+                    type="password"
+                    id="regPasswordConfirm"
+                    name="regPasswordConfirm"
+                    autocomplete="new-password"
+                    required
+                    minlength="10"
+                    aria-describedby="regConfirmHint"
+                    placeholder="Repite tu contraseña"
+                  />
+                  <div class="error-msg">❌ La confirmación de contraseña no coincide.</div>
+                </div>
+
+                <div class="field" style="margin-bottom: 0.3rem; justify-content: center;">
+                  <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-top: 1.2rem;">
+                    <input type="checkbox" id="regEnable2FA" name="regEnable2FA" checked />
+                    Activar Doble Factor de Autenticación (2FA / Código TOTP)
+                  </label>
+                  <span class="hint">Genera una semilla 2FA de 6 dígitos para proteger retiros y cambios críticos.</span>
+                </div>
+              </div>
+            </fieldset>
+
+            <button type="submit" id="btnSubmitRegister" class="btn btn-success" style="width: 100%; padding: 0.7rem;">
+              🔐 Registrar Cuenta con Cifrado PBKDF2-SHA512 e Iniciar Sesión
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: Role-Based Access Control (RBAC) Permission Matrix & Security Audit Log -->
+        <div style="display: flex; flex-direction: column; gap: 1.2rem;">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">🔑 Matriz de Roles y Permisos Granulares (RBAC)</h2>
+                <p style="margin: 0.15rem 0 0; font-size: 0.76rem; color: var(--text-muted);">
+                  Activa o desactiva permisos por rol en tiempo real. La interfaz aplica las restricciones al instante.
+                </p>
+              </div>
+            </div>
+            <div class="data-table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Permiso del Sistema</th>
+                    <th>Super Admin</th>
+                    <th>Analista ICT</th>
+                    <th>Trader VIP</th>
+                    <th>Viewer</th>
+                  </tr>
+                </thead>
+                <tbody id="rbacMatrixTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title">🕵️ Registro de Auditoría de Seguridad (Security Audit Log)</h3>
+              <span class="badge badge-buy">PBKDF2 + 2FA + OAUTH2</span>
+            </div>
+            <div id="securityAuditLogContainer" style="max-height: 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.45rem;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users Management Table -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3 class="panel-title">👥 Directorio de Usuarios Registrados y Gestión de Sesiones</h3>
+          <span style="font-size: 0.76rem; color: var(--text-muted);">
+            Puedes cambiar de usuario activo con 1 clic para probar los permisos de cada rol
+          </span>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Email</th>
+                <th>Método Auth</th>
+                <th>Seguridad 2FA</th>
+                <th>Rol Asignado (RBAC)</th>
+                <th>Índices Suscritos</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="usersDirectoryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         VIEW 5: CONEXIÓN DERIV API v3, CATÁLOGO DE ÍNDICES & BROKERS
+         ==================================================================== -->
+    <section id="view-deriv-api" class="view-section">
+      <div class="two-col-grid" style="margin-bottom: 1.25rem;">
+        <!-- Deriv WebSocket API Configuration -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">🔌 Conexión Directa a Deriv WebSocket API v3</h2>
+            <span class="badge badge-ict">wss://ws.derivws.com</span>
+          </div>
+          <p style="margin: 0 0 1rem; font-size: 0.8rem; color: var(--text-secondary);">
+            Deriv ofrece una <strong>API WebSocket oficial y gratuita</strong> que transmite en tiempo real todos sus Índices Sintéticos (<code>active_symbols</code>, <code>ticks</code>, <code>ticks_history</code> OHLC) las 24 horas de los 7 días de la semana. Con el <code>App ID 1089</code> puedes consumir precios e índices sin costo, y si agregas tu <strong>API Token</strong> (desde <em>app.deriv.com &rarr; Account Settings &rarr; API Token</em>), sincroniza tu balance real o demo.
+          </p>
+
+          <form id="derivApiConfigForm" action="/api/settings/deriv" method="POST">
+            <div class="field">
+              <label for="cfgDerivEndpoint">Servidor WebSocket Deriv API v3</label>
+              <select id="cfgDerivEndpoint" name="cfgDerivEndpoint">
+                <option value="wss://ws.derivws.com/websockets/v3">wss://ws.derivws.com/websockets/v3 (Principal Global)</option>
+                <option value="wss://ws.binaryws.com/websockets/v3">wss://ws.binaryws.com/websockets/v3 (Mirror Oficial)</option>
+              </select>
+            </div>
+
+            <div class="two-col-grid" style="gap: 0.8rem;">
+              <div class="field">
+                <label for="cfgDerivAppId">Deriv App ID *</label>
+                <span class="hint">Usa 1089 (público oficial) o tu App ID de api.deriv.com</span>
+                <input type="text" id="cfgDerivAppId" name="cfgDerivAppId" value="1089" required autocorrect="off" autocapitalize="off" />
+              </div>
+
+              <div class="field">
+                <label for="cfgDerivToken">Deriv API Token (Opcional - Cuenta Demo/Real)</label>
+                <span class="hint">Permisos recomendados: Read + Trade</span>
+                <input type="password" id="cfgDerivToken" name="cfgDerivToken" autocomplete="off" placeholder="Pega tu token de Deriv si deseas vincular cuenta..." />
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; align-items: center; justify-content: space-between;">
+              <div id="derivAccountStatusBox" style="font-size: 0.78rem; color: var(--text-secondary);">
+                Estado actual: Streaming cuantitativo 24/7 activo
+              </div>
+              <button type="submit" class="btn btn-primary">
+                🔄 Reconectar WebSocket Deriv API
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Broker Recommendation & Comparison for Synthetic Indices -->
+        <div class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">🏛️ ¿Qué Broker Conviene Más para Índices Sintéticos + API?</h2>
+            <span class="badge badge-buy">ANÁLISIS TÉCNICO</span>
+          </div>
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Broker</th>
+                  <th>Índices Sintéticos</th>
+                  <th>API para Web / Apps</th>
+                  <th>Veredicto</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Deriv (Recomendado #1)</strong></td>
+                  <td>Volatility 10-100 (1s/2s), Boom/Crash 300/500/1000, Jump 10-100, Step, Range Break</td>
+                  <td><span class="badge badge-buy">API WebSocket JSON Nativa</span> (Gratis, en navegador y Node.js sin MT5)</td>
+                  <td><strong>El mejor del mercado.</strong> Único con API WebSocket directa para leer precios, velas y operar desde una web app sin intermediarios.</td>
+                </tr>
+                <tr>
+                  <td><strong>Weltrade (SyntX)</strong></td>
+                  <td>PainX / GainX (similares a Crash/Boom), FlipX, SwitchX, BreakX</td>
+                  <td><span class="badge badge-viewer">Solo vía MetaTrader 5</span> (Requiere terminal MT5 Windows + puente Python)</td>
+                  <td>Buena alternativa secundaria para cazar spikes (PainX/GainX), pero no tiene API WebSocket pública directa como Deriv.</td>
+                </tr>
+                <tr>
+                  <td><strong>FXPrimus / HFM</strong></td>
+                  <td>Sintéticos limitados / Índices simulados</td>
+                  <td><span class="badge badge-viewer">Solo MT5 Local</span></td>
+                  <td>Menor liquidez y catálogo reducido comparado con los 22+ sintéticos propietarios de Deriv.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="margin: 0.85rem 0 0; font-size: 0.78rem; color: var(--text-secondary);">
+            💡 <strong>Conclusión:</strong> <strong>Deriv</strong> es el estándar definitivo porque sus índices sintéticos están auditados por generador criptográfico de números aleatorios (RNG) 24/7 y su endpoint <code>wss://ws.derivws.com/websockets/v3</code> permite consumir tanto el catálogo (<code>active_symbols</code>) como las velas en vivo (<code>ticks_history</code>) directamente desde esta MicroApp.
+          </p>
+        </div>
+      </div>
+
+      <!-- Complete Technical Catalog of Deriv Synthetic Indices -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3 class="panel-title">📋 Catálogo Técnico Completo de Índices Sintéticos de Deriv (22 Instrumentos)</h3>
+        </div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Símbolo API</th>
+                <th>Nombre Oficial Deriv</th>
+                <th>Categoría / Submercado</th>
+                <th>Precio en Vivo</th>
+                <th>Pip / Decimales</th>
+                <th>Lote Mínimo</th>
+                <th>Velocidad Tick</th>
+                <th>Comportamiento Algorítmico</th>
+                <th>Suscripción Señales</th>
+              </tr>
+            </thead>
+            <tbody id="fullCatalogTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ====================================================================
+       MODAL 1: TOMAR SEÑAL HACIA LA BITÁCORA (CON CHECKLIST PRE-TRADE)
+       ==================================================================== -->
+  <dialog id="takeSignalDialog" class="app-dialog">
+    <div class="panel-header">
+      <h3 id="takeSignalModalTitle" class="panel-title">⚡ Tomar Señal y Añadir a Bitácora con Tracking en Vivo</h3>
+      <button type="button" id="btnCloseTakeSignalModal" class="btn btn-outline btn-sm">✕ Cerrar</button>
+    </div>
+
+    <div id="takeSignalSummaryBox" style="background: #09101f; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-subtle); margin-bottom: 0.9rem; font-size: 0.82rem;"></div>
+
+    <form id="takeSignalForm" action="/api/journal/trades" method="POST">
+      <input type="hidden" id="tsSignalId" name="tsSignalId" />
+
+      <fieldset>
+        <legend>1. Verificación del Checklist Pre-Trade (Obligatorio según tu Plan)</legend>
+        <div id="takeSignalChecklistContainer" style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.8rem;"></div>
+        <div id="takeSignalChecklistScore" style="margin-top: 0.5rem; font-weight: 700; font-size: 0.78rem; color: var(--accent-primary);">
+          Cumplimiento del Checklist: 100%
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. Gestión Monetaria y Psicotrading de la Entrada</legend>
+        <div class="two-col-grid" style="gap: 0.75rem;">
+          <div class="field">
+            <label for="tsLotSize">Lotaje / Stake en Deriv</label>
+            <input type="number" id="tsLotSize" name="tsLotSize" step="0.001" min="0.001" value="0.10" required />
+          </div>
+          <div class="field">
+            <label for="tsRiskUsd">Riesgo Monetario en SL ($ USD)</label>
+            <input type="number" id="tsRiskUsd" name="tsRiskUsd" step="1" min="1" value="25" required />
+          </div>
+          <div class="field">
+            <label for="tsMood">Tu Estado de Ánimo Actual (Psicotrading)</label>
+            <select id="tsMood" name="tsMood"></select>
+          </div>
+          <div class="field">
+            <label for="tsSentiment">Sentimiento / Contexto del Índice</label>
+            <select id="tsSentiment" name="tsSentiment"></select>
+          </div>
+        </div>
+
+        <div class="field" style="margin-bottom: 0;">
+          <label for="tsNotes">Notas de la Operación / Confluencia Personal</label>
+          <textarea id="tsNotes" name="tsNotes" rows="2" placeholder="Ej. Entrada en FVG de M5 tras barrido de liquidez..."></textarea>
+        </div>
+      </fieldset>
+
+      <div id="takeSignalErrorAlert" style="display: none; background: rgba(239, 68, 68, 0.16); border: 1px solid #ef4444; color: #fca5a5; padding: 0.65rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.8rem;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
+        <button type="button" id="btnCancelTakeSignal" class="btn btn-outline">Cancelar</button>
+        <button type="submit" class="btn btn-success">
+          🚀 Confirmar Entrada e Iniciar Barra SL/TP en Tiempo Real
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ====================================================================
+       MODAL 2: LOGIN / CAMBIO DE CUENTA / GOOGLE OAUTH 2.0 SELECTOR
+       ==================================================================== -->
+  <dialog id="authModalDialog" class="app-dialog">
+    <div class="panel-header">
+      <h3 class="panel-title">🔐 Iniciar Sesión / Google OAuth 2.0</h3>
+      <button type="button" id="btnCloseAuthModal" class="btn btn-outline btn-sm">✕</button>
+    </div>
+
+    <div style="margin-bottom: 1rem;">
+      <p style="margin: 0 0 0.5rem; font-size: 0.8rem; color: var(--text-secondary);">
+        <strong>Acceso Rápido con Google (OAuth 2.0):</strong> Selecciona o ingresa una cuenta de Google para autenticarte con token federado:
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 0.65rem;">
+        <button type="button" class="btn btn-google btn-sm google-quick-account" data-name="Elena ICT Strategist" data-email="elena.ict@synthetics.pro" data-role="strategist">
+          🟢 Elena ICT (elena.ict@...)
+        </button>
+        <button type="button" class="btn btn-google btn-sm google-quick-account" data-name="Will Google Pro" data-email="will.deriv.pro@gmail.com" data-role="super_admin">
+          🔵 Will Pro (will.deriv.pro@gmail.com)
+        </button>
+      </div>
+    </div>
+
+    <form id="loginModalForm" action="/api/auth/login" method="POST" novalidate>
+      <fieldset>
+        <legend>Iniciar Sesión con Correo y Contraseña Criptográfica</legend>
+        <div class="field">
+          <label for="loginEmail">Correo Electrónico</label>
+          <input type="email" id="loginEmail" name="loginEmail" autocomplete="email" value="admin@synthetics.pro" required />
+        </div>
+        <div class="field">
+          <label for="loginPassword">Contraseña</label>
+          <input type="password" id="loginPassword" name="loginPassword" autocomplete="current-password" value="Admin@Deriv2026!" required />
+        </div>
+        <div class="field" style="margin-bottom: 0;">
+          <label for="loginOtp">Código 2FA / TOTP (6 dígitos - opcional en demo)</label>
+          <input type="text" id="loginOtp" name="loginOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="246810" />
+        </div>
+      </fieldset>
+      <div id="loginModalError" style="display:none; color:#f87171; font-size:0.8rem; margin-bottom:0.65rem;"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" id="btnGoToRegisterView" class="btn btn-outline btn-sm">Ir a Registro Completo</button>
+        <button type="submit" class="btn btn-primary">Entrar a la Plataforma</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ====================================================================
+       MODAL 3: CREAR NUEVA BITÁCORA PERSONALIZADA
+       ==================================================================== -->
+  <dialog id="newJournalDialog" class="app-dialog">
+    <div class="panel-header">
+      <h3 class="panel-title">📓 Crear Nueva Bitácora de Trading</h3>
+      <button type="button" id="btnCloseNewJournalModal" class="btn btn-outline btn-sm">✕</button>
+    </div>
+    <form id="newJournalForm" action="/api/journal/create" method="POST">
+      <div class="field">
+        <label for="njName">Nombre de la Bitácora *</label>
+        <span class="hint">Ej: Cuenta Fondeo Sintéticos $10k o Reto Caza Spikes</span>
+        <input type="text" id="njName" name="njName" required minlength="3" placeholder="Nombre de la bitácora" />
+      </div>
+      <div class="two-col-grid" style="gap: 0.75rem;">
+        <div class="field">
+          <label for="njBalance">Capital Inicial ($ USD)</label>
+          <input type="number" id="njBalance" name="njBalance" value="1000" min="10" required />
+        </div>
+        <div class="field">
+          <label for="njRiskPct">Riesgo por Entrada (%)</label>
+          <input type="number" id="njRiskPct" name="njRiskPct" value="1.0" step="0.25" min="0.1" max="10" required />
+        </div>
+        <div class="field">
+          <label for="njMaxTrades">Máx. Entradas al Día</label>
+          <input type="number" id="njMaxTrades" name="njMaxTrades" value="4" min="1" max="30" required />
+        </div>
+        <div class="field">
+          <label for="njMaxLosses">Máx. Pérdidas al Día</label>
+          <input type="number" id="njMaxLosses" name="njMaxLosses" value="2" min="1" max="15" required />
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
+        <button type="submit" class="btn btn-success">➕ Crear y Activar Bitácora</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ====================================================================
+       MODAL 4: REGISTRAR OPERACIÓN MANUAL EN LA BITÁCORA
+       ==================================================================== -->
+  <dialog id="manualTradeDialog" class="app-dialog">
+    <div class="panel-header">
+      <h3 class="panel-title">✍️ Añadir Operación Manual a la Bitácora</h3>
+      <button type="button" id="btnCloseManualTradeModal" class="btn btn-outline btn-sm">✕</button>
+    </div>
+    <form id="manualTradeForm" action="/api/journal/manual" method="POST">
+      <div class="two-col-grid" style="gap: 0.75rem;">
+        <div class="field">
+          <label for="mtSymbol">Índice Sintético Deriv</label>
+          <select id="mtSymbol" name="mtSymbol"></select>
+        </div>
+        <div class="field">
+          <label for="mtDirection">Dirección</label>
+          <select id="mtDirection" name="mtDirection">
+            <option value="BUY">BUY (Compra / Long)</option>
+            <option value="SELL">SELL (Venta / Short)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="mtEntry">Precio de Entrada *</label>
+          <input type="number" id="mtEntry" name="mtEntry" step="any" required />
+        </div>
+        <div class="field">
+          <label for="mtSL">Precio Stop Loss (SL) *</label>
+          <input type="number" id="mtSL" name="mtSL" step="any" required />
+        </div>
+        <div class="field">
+          <label for="mtTP">Precio Take Profit (TP) *</label>
+          <input type="number" id="mtTP" name="mtTP" step="any" required />
+        </div>
+        <div class="field">
+          <label for="mtRiskUsd">Riesgo Monetario ($ USD)</label>
+          <input type="number" id="mtRiskUsd" name="mtRiskUsd" value="25" min="1" required />
+        </div>
+        <div class="field">
+          <label for="mtMood">Estado de Ánimo</label>
+          <select id="mtMood" name="mtMood"></select>
+        </div>
+        <div class="field">
+          <label for="mtSentiment">Sentimiento del Mercado</label>
+          <select id="mtSentiment" name="mtSentiment"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="mtNotes">Notas y Lección Operativa</label>
+        <textarea id="mtNotes" name="mtNotes" rows="2" placeholder="Confluencia vista en el gráfico..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
+        <button type="submit" class="btn btn-success">🚀 Iniciar Seguimiento en Tiempo Real</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
