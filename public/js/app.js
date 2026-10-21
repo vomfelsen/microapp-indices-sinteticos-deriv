@@ -133,19 +133,69 @@ class SynthQuantApp {
   }
 
   _bindNavigation() {
-    const tabs = document.querySelectorAll('.nav-tab');
-    tabs.forEach((btn) => {
+    const allNavBtns = document.querySelectorAll('.nav-tab, .mobile-nav-btn');
+    allNavBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
         const targetId = btn.dataset.view;
-        tabs.forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
+        allNavBtns.forEach((b) => b.classList.toggle('active', b.dataset.view === targetId));
         document.querySelectorAll('.view-section').forEach((sec) => {
           sec.classList.toggle('active', sec.id === targetId);
         });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         if (targetId === 'view-signals') {
           this.renderChart();
         }
+        this._refreshScrollAffordances();
       });
+    });
+
+    // Responsive Canvas ResizeObserver for Mobile/Tablet/Desktop
+    const chartWrap = document.querySelector('.chart-canvas-wrap');
+    const canvas = document.getElementById('derivChartCanvas');
+    if (chartWrap && canvas && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const w = Math.max(300, Math.floor(entry.contentRect.width));
+          const h = Math.max(220, Math.floor(entry.contentRect.height));
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+            this.renderChart();
+          }
+        }
+      });
+      ro.observe(chartWrap);
+    }
+
+    // Scrollability affordance fallback listener for .custom-scroller elements
+    document.querySelectorAll('.custom-scroller').forEach((scroller) => {
+      scroller.addEventListener('scroll', () => this._updateSingleScrollerAffordance(scroller), { passive: true });
+    });
+  }
+
+  _updateSingleScrollerAffordance(scroller) {
+    if (!scroller) return;
+    if (!scroller.querySelector(':scope > .scroll-hint-top')) {
+      const topHint = document.createElement('div');
+      topHint.className = 'scroll-hint-top';
+      topHint.setAttribute('aria-hidden', 'true');
+      scroller.prepend(topHint);
+    }
+    if (!scroller.querySelector(':scope > .scroll-hint-bottom')) {
+      const botHint = document.createElement('div');
+      botHint.className = 'scroll-hint-bottom';
+      botHint.setAttribute('aria-hidden', 'true');
+      scroller.append(botHint);
+    }
+    const canUp = scroller.scrollTop > 6;
+    const canDown = scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 6;
+    scroller.classList.toggle('can-scroll-up', canUp);
+    scroller.classList.toggle('can-scroll-down', canDown);
+  }
+
+  _refreshScrollAffordances() {
+    document.querySelectorAll('.custom-scroller').forEach((scroller) => {
+      this._updateSingleScrollerAffordance(scroller);
     });
   }
 
@@ -755,6 +805,7 @@ class SynthQuantApp {
     this.renderJournalView();
     this.renderUsersAndRBACView();
     this.renderFullCatalogTable();
+    this._refreshScrollAffordances();
   }
 
   renderTopUserHeader() {
@@ -847,6 +898,7 @@ class SynthQuantApp {
   renderSymbolSelector() {
     const container = document.getElementById('symbolSelectorList');
     if (!container) return;
+    const prevScrollTop = container.scrollTop;
     const subFilter = document.getElementById('filterSubmarketSelect')?.value || 'all';
     const subscribed = new Set(this.auth.currentUser?.subscribedSymbols || []);
     const catalog = this.market
@@ -885,6 +937,9 @@ class SynthQuantApp {
         `;
       })
       .join('');
+
+    container.scrollTop = prevScrollTop;
+    this._updateSingleScrollerAffordance(container);
 
     container.querySelectorAll('.symbol-row').forEach((row) => {
       row.addEventListener('click', (e) => {
