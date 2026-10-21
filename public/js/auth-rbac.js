@@ -178,17 +178,22 @@ export class AuthRBACManager {
 
   _loadCurrentUser() {
     try {
+      if (localStorage.getItem('deriv_logged_out') === '1') {
+        return null;
+      }
       const saved = localStorage.getItem('deriv_current_user_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
         const match = this.users.find((u) => u.id === parsed.id);
-        if (match) return match;
+        if (match) return { ...match, ...parsed };
       }
     } catch (_e) {}
     return this.users[0];
   }
 
   saveCurrentUser() {
+    if (!this.currentUser) return;
+    localStorage.removeItem('deriv_logged_out');
     localStorage.setItem('deriv_current_user_v1', JSON.stringify(this.currentUser));
     const idx = this.users.findIndex((u) => u.id === this.currentUser.id);
     if (idx !== -1) {
@@ -507,5 +512,56 @@ export class AuthRBACManager {
     this.currentUser.subscribedSymbols = Array.from(list);
     this.saveCurrentUser();
     return this.currentUser.subscribedSymbols;
+  }
+
+  updateCurrentUserProfile({ name, email, bio, phone, photoUrl, twoFactorEnabled }) {
+    if (!this.currentUser) {
+      throw new Error('No hay una sesión activa para editar.');
+    }
+    if (name && name.trim().length >= 2) {
+      this.currentUser.name = name.trim();
+      const initials = this.currentUser.name
+        .split(/\s+/)
+        .map((p) => p[0]?.toUpperCase() || 'U')
+        .slice(0, 2)
+        .join('');
+      this.currentUser.avatar = initials || 'TR';
+    }
+    if (email && email.trim().includes('@')) {
+      this.currentUser.email = email.trim().toLowerCase();
+    }
+    if (bio !== undefined) {
+      this.currentUser.bio = String(bio).trim();
+    }
+    if (phone !== undefined) {
+      this.currentUser.phone = String(phone).trim();
+    }
+    if (photoUrl !== undefined) {
+      this.currentUser.photoUrl = photoUrl;
+    }
+    if (twoFactorEnabled !== undefined) {
+      this.currentUser.twoFactorEnabled = Boolean(twoFactorEnabled);
+      if (this.currentUser.twoFactorEnabled && !this.currentUser.twoFactorCode) {
+        this.currentUser.twoFactorCode = String(Math.floor(100000 + Math.random() * 900000));
+      }
+    }
+
+    this.saveCurrentUser();
+    this.logAudit(
+      'PROFILE_UPDATED',
+      this.currentUser.email,
+      'success',
+      `Datos de perfil actualizados (${this.currentUser.name}${this.currentUser.photoUrl ? ' · Foto actualizada' : ''})`
+    );
+    return this.currentUser;
+  }
+
+  logoutCurrentUser() {
+    const prevEmail = this.currentUser?.email || 'usuario';
+    this.logAudit('USER_LOGOUT', prevEmail, 'info', 'Sesión cerrada por el usuario desde el menú de perfil');
+    this.currentUser = null;
+    localStorage.setItem('deriv_logged_out', '1');
+    localStorage.removeItem('deriv_current_user_v1');
+    return null;
   }
 }

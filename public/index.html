@@ -9,13 +9,95 @@
 <body>
   <!-- TOP NAVIGATION BAR -->
   <header class="app-topbar">
-    <div class="brand-block">
-      <div class="brand-logo" aria-hidden="true">D⚡</div>
-      <div style="min-inline-size: 0;">
-        <h1 class="brand-title">
-          Deriv SynthQuant <span class="badge badge-ict">ICT + API v3</span>
-        </h1>
-        <p class="brand-subtitle">Señales en Índices Sintéticos · Motor de Estrategias · RBAC Auth · Bitácora SL/TP Live</p>
+    <div class="topbar-left">
+      <!-- TOP-LEFT USER PROFILE BUTTON (Declarative Popover Trigger) -->
+      <button
+        type="button"
+        id="btnTopLeftProfile"
+        class="user-profile-trigger"
+        popovertarget="userProfilePopover"
+        commandfor="userProfilePopover"
+        command="toggle-popover"
+        title="Abrir menú de perfil, foto, editar datos y cerrar sesión"
+      >
+        <div id="topUserAvatarWrap" class="user-avatar-wrap">
+          <div id="topUserAvatar" class="user-avatar">WA</div>
+          <img id="topUserAvatarImg" class="user-avatar-img" src="" alt="Foto de perfil" hidden />
+          <span id="topUserOnlineDot" class="user-online-dot" aria-hidden="true"></span>
+        </div>
+        <div class="user-trigger-info">
+          <div id="topUserName" class="user-trigger-name">Will Admin</div>
+          <div id="topUserRoleBadge" class="user-trigger-role">Super Admin</div>
+        </div>
+        <span class="user-trigger-chevron" aria-hidden="true">▾</span>
+      </button>
+
+      <!-- VIEWPORT-AWARE PROFILE DROPDOWN POPOVER -->
+      <div id="userProfilePopover" popover="auto" class="profile-popover">
+        <div class="profile-popover-header">
+          <div class="profile-popover-avatar-box">
+            <div id="popoverAvatarInitials" class="user-avatar user-avatar-lg">WA</div>
+            <img id="popoverAvatarImg" class="user-avatar-img user-avatar-lg" src="" alt="Foto de perfil actual" hidden />
+            <button
+              type="button"
+              id="btnQuickCameraOverlay"
+              class="avatar-camera-btn"
+              title="Subir nueva foto de perfil"
+            >
+              📸
+            </button>
+            <input type="file" id="quickPhotoFileInput" accept="image/*" hidden />
+          </div>
+          <div style="min-inline-size: 0;">
+            <div id="popoverUserName" style="font-weight: 800; font-size: 0.92rem; color: var(--text-primary);">Will Admin</div>
+            <div id="popoverUserEmail" style="font-size: 0.74rem; color: var(--text-muted); overflow: clip; text-overflow: ellipsis;">admin@synthetics.pro</div>
+            <div style="display: flex; align-items: center; gap: 0.35rem; margin-block-start: 0.3rem; flex-wrap: wrap;">
+              <span id="popoverUserRole" class="badge badge-ict">Super Admin</span>
+              <span id="popoverUser2FA" class="badge badge-buy">2FA Activo</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="popoverUserBio" class="profile-popover-bio">
+          Trader institucional de Índices Sintéticos Deriv &amp; ICT.
+        </div>
+
+        <div class="profile-popover-actions">
+          <button type="button" id="btnPopoverAddPhoto" class="profile-action-btn">
+            <span aria-hidden="true">📸</span>
+            <span>Añadir / Cambiar Foto de Perfil</span>
+          </button>
+          <button
+            type="button"
+            id="btnPopoverEditProfile"
+            class="profile-action-btn"
+            commandfor="editProfileDialog"
+            command="show-modal"
+          >
+            <span aria-hidden="true">✏️</span>
+            <span>Editar Datos del Perfil</span>
+          </button>
+          <button type="button" id="btnPopoverSwitchAccount" class="profile-action-btn">
+            <span aria-hidden="true">🔄</span>
+            <span>Cambiar Cuenta / Google OAuth</span>
+          </button>
+          <hr class="profile-popover-divider" />
+          <button type="button" id="btnPopoverLogout" class="profile-action-btn profile-action-logout">
+            <span aria-hidden="true">🚪</span>
+            <span>Cerrar Sesión</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- BRAND BLOCK -->
+      <div class="brand-block">
+        <div class="brand-logo" aria-hidden="true">D⚡</div>
+        <div style="min-inline-size: 0;">
+          <h1 class="brand-title">
+            Deriv SynthQuant <span class="badge badge-ict">ICT + API v3</span>
+          </h1>
+          <p class="brand-subtitle">Señales en Índices Sintéticos · Motor de Estrategias · RBAC Auth · Bitácora SL/TP Live</p>
+        </div>
       </div>
     </div>
 
@@ -43,17 +125,6 @@
       <div id="wsStatusPill" class="ws-pill" title="Estado del flujo de datos de Deriv">
         <span class="ws-dot"></span>
         <span id="wsStatusText">Deriv Feed Activo</span>
-      </div>
-
-      <div class="user-pill">
-        <div id="topUserAvatar" class="user-avatar">WA</div>
-        <div>
-          <div id="topUserName" style="font-weight: 700; font-size: 0.8rem;">Will Admin</div>
-          <div id="topUserRoleBadge" style="font-size: 0.68rem; color: var(--accent-primary);">Super Admin</div>
-        </div>
-        <button type="button" id="btnOpenAuthModal" class="btn btn-outline btn-sm" style="margin-inline-start: 0.25rem;">
-          Cambiar / Login
-        </button>
       </div>
     </div>
   </header>
@@ -1021,6 +1092,101 @@
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 0.6rem;">
         <button type="submit" class="btn btn-success">🚀 Iniciar Seguimiento en Tiempo Real</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ====================================================================
+       MODAL 5: EDITAR DATOS DEL PERFIL & FOTO DE PERFIL
+       ==================================================================== -->
+  <dialog id="editProfileDialog" class="app-dialog">
+    <div class="panel-header">
+      <h3 class="panel-title">✏️ Editar Perfil y Foto de Usuario</h3>
+      <button
+        type="button"
+        id="btnCloseEditProfileModal"
+        class="btn btn-outline btn-sm"
+        commandfor="editProfileDialog"
+        command="close"
+      >
+        ✕ Cerrar
+      </button>
+    </div>
+
+    <form id="editProfileForm" action="/api/users/profile" method="POST">
+      <fieldset>
+        <legend>1. Foto de Perfil</legend>
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <div class="profile-modal-avatar-preview">
+            <div id="epAvatarInitials" class="user-avatar user-avatar-xl">WA</div>
+            <img id="epAvatarImg" class="user-avatar-img user-avatar-xl" src="" alt="Vista previa de foto de perfil" hidden />
+          </div>
+          <div style="flex: 1 1 220px;">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-block-end: 0.5rem;">
+              <label for="epPhotoInput" class="btn btn-primary btn-sm" style="cursor: pointer;">
+                📁 Subir Imagen (JPG / PNG / WebP)
+              </label>
+              <input type="file" id="epPhotoInput" accept="image/*" hidden />
+              <button type="button" id="btnRemoveProfilePhoto" class="btn btn-danger btn-sm">
+                🗑️ Quitar Foto
+              </button>
+            </div>
+            <span class="hint" style="margin-block-end: 0.4rem;">
+              O selecciona un avatar institucional predefinido con 1 toque:
+            </span>
+            <div id="presetAvatarsRow" style="display: flex; gap: 0.45rem; flex-wrap: wrap;"></div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. Datos Personales y Seguridad</legend>
+        <div class="two-col-grid" style="gap: 0.75rem;">
+          <div class="field">
+            <label for="epName">Nombre Completo *</label>
+            <input type="text" id="epName" name="epName" autocomplete="name" required minlength="2" />
+            <div class="error-msg">❌ Ingresa un nombre válido.</div>
+          </div>
+          <div class="field">
+            <label for="epEmail">Correo Electrónico *</label>
+            <input type="email" id="epEmail" name="epEmail" autocomplete="email" autocorrect="off" autocapitalize="off" required />
+            <div class="error-msg">❌ Ingresa un correo válido.</div>
+          </div>
+          <div class="field">
+            <label for="epPhone">Teléfono / Usuario Telegram</label>
+            <input type="text" id="epPhone" name="epPhone" autocomplete="tel" placeholder="+57 300 000 0000 o @tu_usuario" />
+          </div>
+          <div class="field" style="justify-content: center;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-block-start: 1.1rem;">
+              <input type="checkbox" id="epEnable2FA" name="epEnable2FA" />
+              Protección 2FA / TOTP Activa
+            </label>
+          </div>
+        </div>
+        <div class="field" style="margin-block-end: 0;">
+          <label for="epBio">Biografía / Especialidad de Trading</label>
+          <textarea id="epBio" name="epBio" rows="2" placeholder="Ej. Trader de Índices Sintéticos V75 &amp; ICT Silver Bullet..."></textarea>
+        </div>
+      </fieldset>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem;">
+        <button type="button" id="btnLogoutFromModal" class="btn btn-danger btn-sm">
+          🚪 Cerrar Sesión Actual
+        </button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button
+            type="button"
+            id="btnCancelEditProfile"
+            class="btn btn-outline"
+            commandfor="editProfileDialog"
+            command="close"
+          >
+            Cancelar
+          </button>
+          <button type="submit" class="btn btn-success">
+            💾 Guardar Cambios del Perfil
+          </button>
+        </div>
       </div>
     </form>
   </dialog>

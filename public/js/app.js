@@ -723,6 +723,19 @@ class SynthQuantApp {
 
     // Auth Modal & Google OAuth Login
     const authDialog = document.getElementById('authModalDialog');
+    const profilePopover = document.getElementById('userProfilePopover');
+    const editProfileDialog = document.getElementById('editProfileDialog');
+
+    const closeProfilePopover = () => {
+      if (profilePopover && typeof profilePopover.hidePopover === 'function') {
+        try {
+          profilePopover.hidePopover();
+        } catch (_e) {
+          // ignore if already hidden
+        }
+      }
+    };
+
     document.getElementById('btnOpenAuthModal')?.addEventListener('click', () => authDialog?.showModal());
     document.getElementById('btnCloseAuthModal')?.addEventListener('click', () => authDialog?.close());
     document.getElementById('btnGoogleSignInDirect')?.addEventListener('click', () => authDialog?.showModal());
@@ -732,6 +745,155 @@ class SynthQuantApp {
       document.querySelector('.nav-tab[data-view="view-users"]')?.click();
       document.getElementById('regName')?.focus();
     });
+
+    // Top-left Profile Popover & Edit Profile Modal
+    this._pendingProfilePhotoDataUrl = null;
+
+    const quickPhotoInput = document.getElementById('quickPhotoFileInput');
+    const triggerQuickPhoto = () => {
+      if (!this.auth.currentUser) {
+        closeProfilePopover();
+        authDialog?.showModal();
+        this.showToast('🔑 Inicia sesión primero para personalizar tu foto de perfil.');
+        return;
+      }
+      quickPhotoInput?.click();
+    };
+
+    document.getElementById('btnQuickCameraOverlay')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      triggerQuickPhoto();
+    });
+
+    document.getElementById('btnPopoverAddPhoto')?.addEventListener('click', () => {
+      triggerQuickPhoto();
+    });
+
+    quickPhotoInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await this._resizeImageToDataUrl(file, 220);
+        this.auth.updateCurrentUserProfile({ photoUrl: dataUrl });
+        this.renderTopUserHeader();
+        this.renderUsersAndRBACView();
+        this.showToast('📸 <strong>Foto de perfil actualizada</strong> en tu cuenta activa.');
+      } catch (err) {
+        this.showToast(`⚠️ Error al procesar imagen: ${err.message}`);
+      } finally {
+        quickPhotoInput.value = '';
+      }
+    });
+
+    // Open Edit Profile Modal and populate fields
+    const openEditProfileModal = () => {
+      closeProfilePopover();
+      const u = this.auth.currentUser;
+      if (!u) {
+        authDialog?.showModal();
+        this.showToast('🔑 Inicia sesión para editar tus datos de perfil.');
+        return;
+      }
+      this._pendingProfilePhotoDataUrl = u.photoUrl || '';
+      this._syncEditProfileAvatarPreview(this._pendingProfilePhotoDataUrl, u.avatar || 'TR');
+
+      const nameEl = document.getElementById('epName');
+      const emailEl = document.getElementById('epEmail');
+      const phoneEl = document.getElementById('epPhone');
+      const bioEl = document.getElementById('epBio');
+      const twoFaEl = document.getElementById('epEnable2FA');
+
+      if (nameEl) nameEl.value = u.name || '';
+      if (emailEl) emailEl.value = u.email || '';
+      if (phoneEl) phoneEl.value = u.phone || '';
+      if (bioEl) bioEl.value = u.bio || '';
+      if (twoFaEl) twoFaEl.checked = Boolean(u.twoFactorEnabled);
+
+      this._renderPresetAvatarsRow();
+      if (editProfileDialog && !editProfileDialog.open) {
+        editProfileDialog.showModal();
+      }
+    };
+
+    document.getElementById('btnPopoverEditProfile')?.addEventListener('click', openEditProfileModal);
+    document.getElementById('btnCloseEditProfile')?.addEventListener('click', () => editProfileDialog?.close());
+    document.getElementById('btnCancelEditProfile')?.addEventListener('click', () => editProfileDialog?.close());
+
+    // Photo input inside Edit Profile Modal
+    const epPhotoInput = document.getElementById('epPhotoInput');
+    epPhotoInput?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await this._resizeImageToDataUrl(file, 220);
+        this._pendingProfilePhotoDataUrl = dataUrl;
+        this._syncEditProfileAvatarPreview(dataUrl, this.auth.currentUser?.avatar || 'TR');
+      } catch (err) {
+        this.showToast(`⚠️ No se pudo cargar la foto: ${err.message}`);
+      } finally {
+        epPhotoInput.value = '';
+      }
+    });
+
+    document.getElementById('btnRemoveProfilePhoto')?.addEventListener('click', () => {
+      this._pendingProfilePhotoDataUrl = '';
+      const nm = document.getElementById('epName')?.value || this.auth.currentUser?.name || 'TR';
+      const initials = nm
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+      this._syncEditProfileAvatarPreview('', initials || 'TR');
+    });
+
+    // Save Edit Profile Form
+    const editProfileForm = document.getElementById('editProfileForm');
+    editProfileForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!editProfileForm.checkValidity()) {
+        editProfileForm.reportValidity();
+        return;
+      }
+      try {
+        const updated = this.auth.updateCurrentUserProfile({
+          name: document.getElementById('epName')?.value,
+          email: document.getElementById('epEmail')?.value,
+          phone: document.getElementById('epPhone')?.value,
+          bio: document.getElementById('epBio')?.value,
+          twoFactorEnabled: Boolean(document.getElementById('epEnable2FA')?.checked),
+          photoUrl: this._pendingProfilePhotoDataUrl
+        });
+        editProfileDialog?.close();
+        this.renderAll();
+        this.showToast(`✅ <strong>Perfil actualizado</strong>: Datos guardados para ${updated.name}.`);
+      } catch (err) {
+        this.showToast(`⚠️ ${err.message}`);
+      }
+    });
+
+    // Switch Account from Popover
+    document.getElementById('btnPopoverSwitchAccount')?.addEventListener('click', () => {
+      closeProfilePopover();
+      authDialog?.showModal();
+    });
+
+    // Logout handlers (from Popover and from Edit Profile Modal)
+    const handleLogout = () => {
+      closeProfilePopover();
+      editProfileDialog?.close();
+      const prevUser = this.auth.logoutCurrentUser();
+      this.renderAll();
+      this.showToast(
+        prevUser
+          ? `🚪 <strong>Sesión cerrada</strong> (${prevUser.name}). Selecciona o ingresa con una cuenta para operar.`
+          : '🚪 Sesión cerrada.'
+      );
+      authDialog?.showModal();
+    };
+
+    document.getElementById('btnPopoverLogout')?.addEventListener('click', handleLogout);
+    document.getElementById('btnLogoutFromModal')?.addEventListener('click', handleLogout);
 
     document.querySelectorAll('.google-quick-account').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -774,6 +936,106 @@ class SynthQuantApp {
     });
   }
 
+  _resizeImageToDataUrl(file, maxSize = 220) {
+    return new Promise((resolve, reject) => {
+      if (!file || !file.type.startsWith('image/')) {
+        reject(new Error('Selecciona un archivo de imagen válido (JPG, PNG, WEBP, SVG).'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo seleccionado.'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Formato de imagen no válido.'));
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = maxSize;
+          canvas.height = maxSize;
+          const ctx = canvas.getContext('2d');
+          // Center square crop
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, maxSize, maxSize);
+          resolve(canvas.toDataURL('image/jpeg', 0.86));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  _syncEditProfileAvatarPreview(photoUrl, initials = 'TR') {
+    const imgEl = document.getElementById('epAvatarImg');
+    const initEl = document.getElementById('epAvatarInitials');
+    if (initEl) initEl.textContent = initials;
+    if (imgEl) {
+      if (photoUrl) {
+        imgEl.src = photoUrl;
+        imgEl.hidden = false;
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.hidden = true;
+      }
+    }
+  }
+
+  _getPresetTraderAvatars() {
+    const svgToDataUrl = (svg) => `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    return [
+      {
+        label: 'Quant Cyan',
+        url: svgToDataUrl(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0284c7"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g1)"/><circle cx="60" cy="44" r="20" fill="#e0f2fe"/><path d="M24 104c6-22 22-32 36-32s30 10 36 32" fill="#e0f2fe"/><path d="M25 32l16-12 14 10 22-16 18 12" stroke="#34d399" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`
+        )
+      },
+      {
+        label: 'Bullish Emerald',
+        url: svgToDataUrl(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#059669"/><stop offset="100%" stop-color="#0f172a"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g2)"/><circle cx="60" cy="45" r="19" fill="#d1fae5"/><path d="M26 104c6-20 20-30 34-30s28 10 34 30" fill="#d1fae5"/><polyline points="24,84 48,62 64,72 94,36" fill="none" stroke="#34d399" stroke-width="6" stroke-linecap="round"/></svg>`
+        )
+      },
+      {
+        label: 'ICT Sniper Purple',
+        url: svgToDataUrl(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#db2777"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g3)"/><circle cx="60" cy="45" r="19" fill="#fae8ff"/><path d="M26 104c6-20 20-30 34-30s28 10 34 30" fill="#fae8ff"/><circle cx="60" cy="60" r="46" fill="none" stroke="#38bdf8" stroke-width="3" stroke-dasharray="8 6"/></svg>`
+        )
+      },
+      {
+        label: 'Gold Institutional',
+        url: svgToDataUrl(
+          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#d97706"/><stop offset="100%" stop-color="#1e293b"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g4)"/><circle cx="60" cy="46" r="19" fill="#fef3c7"/><path d="M26 104c6-20 20-30 34-30s28 10 34 30" fill="#fef3c7"/><polygon points="36,28 48,38 60,22 72,38 84,28 80,44 40,44" fill="#fbbf24"/></svg>`
+        )
+      }
+    ];
+  }
+
+  _renderPresetAvatarsRow() {
+    const row = document.getElementById('presetAvatarsRow');
+    if (!row) return;
+    const presets = this._getPresetTraderAvatars();
+    row.innerHTML = presets
+      .map(
+        (p, idx) => `
+        <button type="button" class="preset-avatar-btn ${this._pendingProfilePhotoDataUrl === p.url ? 'active' : ''}" data-idx="${idx}" title="Usar avatar ${p.label}">
+          <img src="${p.url}" alt="${p.label}" />
+        </button>
+      `
+      )
+      .join('');
+
+    row.querySelectorAll('.preset-avatar-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const preset = presets[Number(btn.dataset.idx)];
+        if (!preset) return;
+        this._pendingProfilePhotoDataUrl = preset.url;
+        this._syncEditProfileAvatarPreview(preset.url, this.auth.currentUser?.avatar || 'TR');
+        row.querySelectorAll('.preset-avatar-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  }
+
   _bindDerivApiConfig() {
     const form = document.getElementById('derivApiConfigForm');
     form?.addEventListener('submit', (e) => {
@@ -810,14 +1072,82 @@ class SynthQuantApp {
 
   renderTopUserHeader() {
     const u = this.auth.currentUser;
-    if (!u) return;
-    const roleObj = this.auth.roles[u.role];
     const av = document.getElementById('topUserAvatar');
+    const avImg = document.getElementById('topUserAvatarImg');
+    const dot = document.getElementById('topUserOnlineDot');
     const nm = document.getElementById('topUserName');
     const rl = document.getElementById('topUserRoleBadge');
-    if (av) av.textContent = u.avatar || 'TR';
+
+    // Popover elements
+    const popAv = document.getElementById('popoverAvatarInitials');
+    const popAvImg = document.getElementById('popoverAvatarImg');
+    const popName = document.getElementById('popoverUserName');
+    const popEmail = document.getElementById('popoverUserEmail');
+    const popRole = document.getElementById('popoverUserRole');
+    const pop2FA = document.getElementById('popoverUser2FA');
+    const popBio = document.getElementById('popoverUserBio');
+
+    if (!u) {
+      if (av) av.textContent = 'OFF';
+      if (avImg) {
+        avImg.removeAttribute('src');
+        avImg.hidden = true;
+      }
+      if (dot) dot.classList.add('offline');
+      if (nm) nm.textContent = 'Sin Sesión';
+      if (rl) rl.textContent = 'Haz clic para iniciar sesión';
+
+      if (popAv) popAv.textContent = 'OFF';
+      if (popAvImg) {
+        popAvImg.removeAttribute('src');
+        popAvImg.hidden = true;
+      }
+      if (popName) popName.textContent = 'Sesión Cerrada';
+      if (popEmail) popEmail.textContent = 'Inicia sesión con tus credenciales o Google';
+      if (popRole) popRole.textContent = 'Desconectado';
+      if (pop2FA) pop2FA.textContent = 'Sin sesión';
+      if (popBio) popBio.textContent = '';
+      return;
+    }
+
+    const roleObj = this.auth.roles[u.role];
+    const initials = u.avatar || 'TR';
+    const hasPhoto = Boolean(u.photoUrl);
+
+    if (av) av.textContent = initials;
+    if (avImg) {
+      if (hasPhoto) {
+        avImg.src = u.photoUrl;
+        avImg.hidden = false;
+      } else {
+        avImg.removeAttribute('src');
+        avImg.hidden = true;
+      }
+    }
+    if (dot) dot.classList.remove('offline');
     if (nm) nm.textContent = u.name;
-    if (rl) rl.textContent = `${roleObj?.name || u.role} ${u.authProvider === 'google' ? '· Google' : '· 2FA'}`;
+    if (rl) rl.textContent = `${roleObj?.name || u.role} ${u.authProvider === 'google' ? '· Google' : u.twoFactorEnabled ? '· 2FA' : ''}`;
+
+    if (popAv) popAv.textContent = initials;
+    if (popAvImg) {
+      if (hasPhoto) {
+        popAvImg.src = u.photoUrl;
+        popAvImg.hidden = false;
+      } else {
+        popAvImg.removeAttribute('src');
+        popAvImg.hidden = true;
+      }
+    }
+    if (popName) popName.textContent = u.name;
+    if (popEmail) popEmail.textContent = u.email + (u.phone ? ` · ${u.phone}` : '');
+    if (popRole) popRole.textContent = roleObj?.name || u.role;
+    if (pop2FA) {
+      pop2FA.textContent = u.twoFactorEnabled ? '🔐 2FA Activo' : 'Sin 2FA';
+      pop2FA.className = `badge ${u.twoFactorEnabled ? 'badge-buy' : 'badge-viewer'}`;
+    }
+    if (popBio) {
+      popBio.textContent = u.bio || '';
+    }
   }
 
   renderTopKpis() {
@@ -1699,9 +2029,13 @@ class SynthQuantApp {
             <tr style="${isCurrent ? 'background:rgba(56,189,248,0.08);' : ''}">
               <td>
                 <div style="display:flex;align-items:center;gap:0.5rem;">
-                  <div class="user-avatar" style="width:26px;height:26px;font-size:0.7rem;">${u.avatar || 'US'}</div>
+                  <div class="user-avatar-wrap" style="width:28px;height:28px;">
+                    <div class="user-avatar" style="width:28px;height:28px;font-size:0.7rem;">${u.avatar || 'US'}</div>
+                    ${u.photoUrl ? `<img class="user-avatar-img" src="${u.photoUrl}" alt="${u.name}" />` : ''}
+                  </div>
                   <div>
                     <div style="font-weight:700;">${u.name} ${isCurrent ? '<span class="badge badge-ict">SESIÓN ACTIVA</span>' : ''}</div>
+                    ${u.bio ? `<div style="font-size:0.68rem;color:var(--text-muted);">${u.bio}</div>` : ''}
                   </div>
                 </div>
               </td>
