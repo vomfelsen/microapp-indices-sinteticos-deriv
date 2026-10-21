@@ -31,6 +31,11 @@ MicroApp completa para el análisis, generación de señales y gestión de bitá
 5. **Seguridad Nivel 5, Login con Google (OAuth 2.0) y Roles/Permisos (RBAC)**
    - Registro con hashing `PBKDF2-HMAC-SHA512`, medidor de entropía en bits, 2FA/TOTP y protección Anti-Fuerza Bruta.
    - Acceso con Google OAuth 2.0 y matriz de permisos RBAC en vivo (`Super Admin`, `Analista ICT`, `Trader Pro / VIP`, `Viewer`).
+   - **Menú de Perfil en la Esquina Superior Izquierda**: Popover nativo con carga y recorte de foto de perfil, avatares SVG predefinidos, edición de datos del usuario y cierre de sesión.
+
+6. **Diseño UX/UI Adaptativo y Mobile-First**
+   - Barras de desplazamiento personalizadas (`scrollbar-width`, `scrollbar-gutter`, `:webkit-scrollbar`) con degradados de estado de scroll (`scroll-state(scrollable)` + fallback JS).
+   - Barra de navegación inferior fija en dispositivos móviles con soporte `safe-area-inset-bottom` y objetivos táctiles de `44px`.
 
 ## Ejecución Rápida
 
