@@ -107,12 +107,17 @@ export function SignalCard({ signal }: SignalCardProps) {
     existing?.outcome ?? "OPEN"
   );
 
-  // 2. Inputs de Ejecución: Loteaje, Entrada, TP Objetivo y Precio de Salida
+  // 2. Inputs de Ejecución: Loteaje, Entrada, SL, TP Objetivo y Precio de Salida
   const [lotSize, setLotSize] = useState<string>(
     existing ? String(existing.lotSize) : "0.20"
   );
   const [executionPrice, setExecutionPrice] = useState<string>(
     defaultExecPrice.toFixed(2)
+  );
+  const [targetSlPrice, setTargetSlPrice] = useState<string>(
+    existing?.targetSlPrice
+      ? existing.targetSlPrice.toFixed(2)
+      : signal.stopLoss.toFixed(2)
   );
   const [targetTpPrice, setTargetTpPrice] = useState<string>(
     signal.takeProfit1.toFixed(2)
@@ -166,8 +171,8 @@ export function SignalCard({ signal }: SignalCardProps) {
       // Si fue Ganada -> Poner automáticamente el valor del TP seleccionado en Precio de Salida
       setExitPrice(targetTpPrice || signal.takeProfit1.toFixed(2));
     } else if (nextStatus === "LOSS") {
-      // Si fue Perdida (SL) -> Poner automáticamente el valor del Stop Loss de la señal en Precio de Salida
-      setExitPrice(signal.stopLoss.toFixed(2));
+      // Si fue Perdida (SL) -> Poner automáticamente el valor del Stop Loss (editable/personalizado) en Precio de Salida
+      setExitPrice(targetSlPrice || signal.stopLoss.toFixed(2));
     } else if (nextStatus === "BREAKEVEN") {
       // Si fue Break Even -> Poner el mismo precio de entrada
       setExitPrice(executionPrice);
@@ -194,6 +199,7 @@ export function SignalCard({ signal }: SignalCardProps) {
   const autoCalc = useMemo(() => {
     const isStillOpen = selectedStatus === "OPEN";
     const parsedTp = parseFloat(targetTpPrice) || signal.takeProfit1;
+    const parsedSl = parseFloat(targetSlPrice) || signal.stopLoss;
 
     // Si está "Abierta / En Curso", también calculamos cuánto ganaría si toca su TP objetivo
     const projectedWhenOpen = calculateTradeMetrics({
@@ -202,7 +208,7 @@ export function SignalCard({ signal }: SignalCardProps) {
       lotSize: parseFloat(lotSize) || 0.01,
       executionPrice: parseFloat(executionPrice) || signal.entryPrice,
       exitPrice: parsedTp,
-      stopLoss: signal.stopLoss,
+      stopLoss: parsedSl,
       takeProfit1: parsedTp,
       takeProfit2: signal.takeProfit2,
       isStillOpen: false,
@@ -214,7 +220,7 @@ export function SignalCard({ signal }: SignalCardProps) {
       lotSize: parseFloat(lotSize) || 0.01,
       executionPrice: parseFloat(executionPrice) || signal.entryPrice,
       exitPrice: exitPrice !== "" ? parseFloat(exitPrice) : null,
-      stopLoss: signal.stopLoss,
+      stopLoss: parsedSl,
       takeProfit1: parsedTp,
       takeProfit2: signal.takeProfit2,
       isStillOpen,
@@ -230,6 +236,7 @@ export function SignalCard({ signal }: SignalCardProps) {
     lotSize,
     executionPrice,
     targetTpPrice,
+    targetSlPrice,
     exitPrice,
   ]);
 
@@ -251,6 +258,7 @@ export function SignalCard({ signal }: SignalCardProps) {
       const startEntry = (signal.liveSpotPrice ?? signal.entryPrice).toFixed(2);
       setExecutionPrice(startEntry);
       setTargetTpPrice(signal.takeProfit1.toFixed(2));
+      setTargetSlPrice(signal.stopLoss.toFixed(2));
       setSelectedStatus("OPEN");
       setExitPrice(signal.takeProfit1.toFixed(2));
       setTradingSession(liveDetected.session);
@@ -309,6 +317,7 @@ export function SignalCard({ signal }: SignalCardProps) {
           lotSize: parsedLot,
           executionPrice: parsedPrice,
           targetTpPrice: targetTpPrice ? parseFloat(targetTpPrice) : signal.takeProfit1,
+          targetSlPrice: targetSlPrice ? parseFloat(targetSlPrice) : signal.stopLoss,
           exitPrice:
             selectedStatus !== "OPEN" && exitPrice
               ? parseFloat(exitPrice)
@@ -687,8 +696,8 @@ export function SignalCard({ signal }: SignalCardProps) {
               </div>
             </div>
 
-            {/* 2. Campos: Loteaje, Precio Entrada Real, Campo de TP y Precio de Salida (SL o TP) */}
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {/* 2. Campos: Loteaje, Precio Entrada Real, Stop Loss (Editable), Take Profit (TP) y Precio Salida */}
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
               {/* Loteaje */}
               <div>
                 <label className="block text-[11px] font-medium text-zinc-400">
@@ -732,6 +741,41 @@ export function SignalCard({ signal }: SignalCardProps) {
                   value={executionPrice}
                   onChange={(e) => setExecutionPrice(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 font-mono text-xs font-bold text-zinc-100 focus:border-amber-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Campo de Stop Loss (SL) - Editable con nivel predeterminado de la señal */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-medium text-rose-400">
+                    Stop Loss (SL)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const origSl = signal.stopLoss.toFixed(2);
+                      setTargetSlPrice(origSl);
+                      if (selectedStatus === "LOSS") setExitPrice(origSl);
+                    }}
+                    title="Restablecer al SL original de la señal"
+                    className="font-mono text-[9px] text-rose-400/80 hover:text-rose-300 hover:underline"
+                  >
+                    Señal: {signal.stopLoss.toFixed(2)}
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  value={targetSlPrice}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTargetSlPrice(val);
+                    if (selectedStatus === "LOSS") {
+                      setExitPrice(val);
+                    }
+                  }}
+                  className="mt-1 w-full rounded-xl border border-rose-900/60 bg-zinc-900 px-3 py-2 font-mono text-xs font-bold text-rose-400 focus:border-rose-400 focus:outline-none"
                 />
               </div>
 
@@ -785,7 +829,7 @@ export function SignalCard({ signal }: SignalCardProps) {
               </div>
 
               {/* Precio de Salida (Si es SL pone automáticamente el valor del Stop Loss) */}
-              <div>
+              <div className="col-span-2 sm:col-span-1 lg:col-span-1">
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-medium text-zinc-400">
                     Precio Salida
@@ -794,11 +838,11 @@ export function SignalCard({ signal }: SignalCardProps) {
                     type="button"
                     onClick={() => {
                       setSelectedStatus("LOSS");
-                      setExitPrice(signal.stopLoss.toFixed(2));
+                      setExitPrice(targetSlPrice || signal.stopLoss.toFixed(2));
                     }}
                     className="font-mono text-[9px] text-rose-400 hover:underline"
                   >
-                    SL: {signal.stopLoss.toFixed(2)}
+                    SL: {targetSlPrice || signal.stopLoss.toFixed(2)}
                   </button>
                 </div>
                 <input
@@ -808,7 +852,9 @@ export function SignalCard({ signal }: SignalCardProps) {
                   disabled={selectedStatus === "OPEN"}
                   value={selectedStatus === "OPEN" ? "" : exitPrice}
                   placeholder={
-                    selectedStatus === "OPEN" ? "En curso..." : signal.stopLoss.toFixed(2)
+                    selectedStatus === "OPEN"
+                      ? "En curso..."
+                      : targetSlPrice || signal.stopLoss.toFixed(2)
                   }
                   onChange={(e) => {
                     const val = e.target.value;

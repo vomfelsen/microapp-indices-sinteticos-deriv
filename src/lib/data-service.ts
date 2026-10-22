@@ -76,6 +76,7 @@ export interface AppJournalEntry {
   lotSize: number;
   executionPrice: number;
   targetTpPrice?: number | null;  // Nivel de Take Profit objetivo del trader
+  targetSlPrice?: number | null;  // Nivel de Stop Loss editable/objetivo del trader
   estimatedProfit?: number;       // Ganancia estimada en USD si toca el TP objetivo
   exitPrice?: number | null;
   riskAmount: number;             // Riesgo en USD si toca el SL (1R)
@@ -980,6 +981,7 @@ export const DataService = {
     lotSize: number;
     executionPrice: number;
     targetTpPrice?: number | null;
+    targetSlPrice?: number | null;
     exitPrice?: number | null;
     riskAmount: number;
     pnlAmount: number;
@@ -1011,6 +1013,11 @@ export const DataService = {
         : sig
         ? Number(sig.takeProfit1)
         : execPrice + 15;
+      const slPrice = input.targetSlPrice
+        ? Number(input.targetSlPrice)
+        : sig
+        ? Number(sig.stopLoss)
+        : execPrice - 10;
 
       const multiplier = getContractMultiplier(sig?.asset ?? "Volatility 75");
       const estimatedProfit = Number(
@@ -1048,13 +1055,17 @@ export const DataService = {
               entryZoneMax: sig.entryZoneMax
                 ? Number(sig.entryZoneMax)
                 : null,
-              stopLoss: Number(sig.stopLoss),
+              stopLoss: slPrice,
               takeProfit1: Number(sig.takeProfit1),
               takeProfit2: sig.takeProfit2 ? Number(sig.takeProfit2) : null,
               signalCreatedAt: sig.createdAt.toISOString(),
               capturedAt: new Date().toISOString(),
             }
           : null);
+
+      if (snapshot && input.targetSlPrice) {
+        snapshot.stopLoss = slPrice;
+      }
 
       const saved = await prisma.journalEntry.upsert({
         where: {
@@ -1113,6 +1124,7 @@ export const DataService = {
         targetTpPrice: saved.targetTpPrice
           ? Number(saved.targetTpPrice)
           : null,
+        targetSlPrice: slPrice,
         estimatedProfit: Number(saved.estimatedProfit),
         exitPrice: saved.exitPrice ? Number(saved.exitPrice) : null,
         riskAmount: Number(saved.riskAmount),
@@ -1143,6 +1155,9 @@ export const DataService = {
     const tpPrice = input.targetTpPrice
       ? Number(input.targetTpPrice)
       : sig?.takeProfit1 ?? execPrice + 15;
+    const slPrice = input.targetSlPrice
+      ? Number(input.targetSlPrice)
+      : sig?.stopLoss ?? execPrice - 10;
 
     const multiplier = getContractMultiplier(sig?.asset ?? "Volatility 75");
     const estimatedProfit = Number(
@@ -1177,7 +1192,7 @@ export const DataService = {
             strategyTimeframe: strat?.timeframe ?? "M15",
             entryPrice: sig.entryPrice,
             entryZoneMax: sig.entryZoneMax ?? null,
-            stopLoss: sig.stopLoss,
+            stopLoss: slPrice,
             takeProfit1: sig.takeProfit1,
             takeProfit2: sig.takeProfit2 ?? null,
             signalCreatedAt: sig.createdAt,
@@ -1185,11 +1200,16 @@ export const DataService = {
           }
         : null);
 
+    if (snapshot && input.targetSlPrice) {
+      snapshot.stopLoss = slPrice;
+    }
+
     if (existing) {
       existing.outcome = input.outcome;
       existing.lotSize = lots;
       existing.executionPrice = execPrice;
       existing.targetTpPrice = tpPrice;
+      existing.targetSlPrice = slPrice;
       existing.estimatedProfit = estimatedProfit;
       existing.exitPrice = input.exitPrice ? Number(input.exitPrice) : null;
       existing.riskAmount = risk;
@@ -1214,6 +1234,7 @@ export const DataService = {
       lotSize: lots,
       executionPrice: execPrice,
       targetTpPrice: tpPrice,
+      targetSlPrice: slPrice,
       estimatedProfit,
       exitPrice: input.exitPrice ? Number(input.exitPrice) : null,
       riskAmount: risk,
@@ -1426,6 +1447,9 @@ export const DataService = {
           lotSize: Number(j.lotSize),
           executionPrice: Number(j.executionPrice),
           targetTpPrice: j.targetTpPrice ? Number(j.targetTpPrice) : null,
+          targetSlPrice:
+            resolvedSnapshot?.stopLoss ??
+            (sig ? Number(sig.stopLoss) : null),
           estimatedProfit: Number(j.estimatedProfit),
           exitPrice: j.exitPrice ? Number(j.exitPrice) : null,
           riskAmount: Number(j.riskAmount),
@@ -1480,6 +1504,10 @@ export const DataService = {
 
         return {
           ...j,
+          targetSlPrice:
+            j.targetSlPrice ??
+            resolvedSnapshot?.stopLoss ??
+            (sig ? sig.stopLoss : null),
           isDeleted: Boolean(j.isDeleted),
           deletedAt: j.deletedAt ?? null,
           signal: sig ?? null,

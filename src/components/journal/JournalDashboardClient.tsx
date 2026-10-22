@@ -184,6 +184,7 @@ export function JournalDashboardClient({
   const [selectedStatus, setSelectedStatus] = useState<TradeOutcome>("OPEN");
   const [lotSize, setLotSize] = useState<string>("0.20");
   const [executionPrice, setExecutionPrice] = useState<string>("");
+  const [targetSlPrice, setTargetSlPrice] = useState<string>("");
   const [targetTpPrice, setTargetTpPrice] = useState<string>("");
   const [exitPrice, setExitPrice] = useState<string>("");
   const [tradingSession, setTradingSession] =
@@ -246,7 +247,11 @@ export function JournalDashboardClient({
       if (savedMetaStr) {
         const metaMap: Record<
           string,
-          { journalBookId?: string; confluences?: string[] }
+          {
+            journalBookId?: string;
+            confluences?: string[];
+            targetSlPrice?: number | null;
+          }
         > = JSON.parse(savedMetaStr);
         setEntries((prev) =>
           prev.map((e) => {
@@ -254,6 +259,10 @@ export function JournalDashboardClient({
             if (m) {
               return {
                 ...e,
+                targetSlPrice:
+                  m.targetSlPrice !== undefined
+                    ? m.targetSlPrice
+                    : e.targetSlPrice,
                 journalBookId: m.journalBookId || e.journalBookId || "jb_main",
                 confluences: m.confluences || e.confluences || [],
               };
@@ -406,9 +415,19 @@ export function JournalDashboardClient({
       const sig = entry.signal;
       const asset = sig?.asset ?? "Volatility 75";
       const direction = sig?.direction ?? "BUY";
-      const sl = sig?.stopLoss ?? entry.executionPrice - 10;
+      const sl =
+        entry.targetSlPrice ??
+        entry.signalSnapshot?.stopLoss ??
+        sig?.stopLoss ??
+        (direction === "BUY"
+          ? entry.executionPrice - 10
+          : entry.executionPrice + 10);
       const tp =
-        entry.targetTpPrice ?? sig?.takeProfit1 ?? entry.executionPrice + 15;
+        entry.targetTpPrice ??
+        sig?.takeProfit1 ??
+        (direction === "BUY"
+          ? entry.executionPrice + 15
+          : entry.executionPrice - 15);
 
       const calc = calculateTradeMetrics({
         asset,
@@ -432,6 +451,7 @@ export function JournalDashboardClient({
             lotSize: entry.lotSize,
             executionPrice: entry.executionPrice,
             targetTpPrice: tp,
+            targetSlPrice: sl,
             exitPrice: triggerExitPrice,
             riskAmount: calc.riskUsd,
             pnlAmount: calc.signedPnlUsd,
@@ -448,7 +468,13 @@ export function JournalDashboardClient({
           const updated = await res.json();
           setEntries((prev) =>
             prev.map((item) =>
-              item.id === entry.id ? { ...item, ...updated } : item
+              item.id === entry.id
+                ? {
+                    ...item,
+                    ...updated,
+                    targetSlPrice: item.targetSlPrice ?? updated.targetSlPrice,
+                  }
+                : item
             )
           );
           setAutoCloseAlert(
@@ -496,6 +522,8 @@ export function JournalDashboardClient({
               ? entry.executionPrice + 15
               : entry.executionPrice - 15);
           const sl =
+            entry.targetSlPrice ??
+            entry.signalSnapshot?.stopLoss ??
             sig?.stopLoss ??
             (direction === "BUY"
               ? entry.executionPrice - 10
@@ -648,9 +676,9 @@ export function JournalDashboardClient({
         targetTpPrice || (sig ? sig.takeProfit1.toFixed(2) : executionPrice)
       );
     } else if (nextStatus === "LOSS") {
-      if (sig) {
-        setExitPrice(sig.stopLoss.toFixed(2));
-      }
+      setExitPrice(
+        targetSlPrice || (sig ? sig.stopLoss.toFixed(2) : executionPrice)
+      );
     } else if (nextStatus === "BREAKEVEN") {
       setExitPrice(executionPrice);
     }
@@ -664,6 +692,10 @@ export function JournalDashboardClient({
       parseFloat(targetTpPrice) ||
       sig?.takeProfit1 ||
       (parseFloat(executionPrice) || 100) + 15;
+    const parsedSl =
+      parseFloat(targetSlPrice) ||
+      sig?.stopLoss ||
+      (parseFloat(executionPrice) || 100) - 10;
 
     const projectedWhenOpen = calculateTradeMetrics({
       asset: sig?.asset ?? "Volatility 75",
@@ -672,7 +704,7 @@ export function JournalDashboardClient({
       executionPrice:
         parseFloat(executionPrice) || editingEntry?.executionPrice || 0,
       exitPrice: parsedTp,
-      stopLoss: sig?.stopLoss ?? (parseFloat(executionPrice) || 100) - 10,
+      stopLoss: parsedSl,
       takeProfit1: parsedTp,
       takeProfit2: sig?.takeProfit2 ?? null,
       isStillOpen: false,
@@ -685,7 +717,7 @@ export function JournalDashboardClient({
       executionPrice:
         parseFloat(executionPrice) || editingEntry?.executionPrice || 0,
       exitPrice: exitPrice !== "" ? parseFloat(exitPrice) : null,
-      stopLoss: sig?.stopLoss ?? (parseFloat(executionPrice) || 100) - 10,
+      stopLoss: parsedSl,
       takeProfit1: parsedTp,
       takeProfit2: sig?.takeProfit2 ?? null,
       isStillOpen,
@@ -701,6 +733,7 @@ export function JournalDashboardClient({
     lotSize,
     executionPrice,
     targetTpPrice,
+    targetSlPrice,
     exitPrice,
   ]);
 
@@ -743,11 +776,17 @@ export function JournalDashboardClient({
       ? orig.takeProfit1.toFixed(2)
       : entry.executionPrice.toFixed(2);
     setTargetTpPrice(defaultTp);
+    const defaultSl = entry.targetSlPrice
+      ? entry.targetSlPrice.toFixed(2)
+      : orig
+      ? orig.stopLoss.toFixed(2)
+      : (entry.executionPrice - 10).toFixed(2);
+    setTargetSlPrice(defaultSl);
     setExitPrice(
       entry.exitPrice
         ? entry.exitPrice.toFixed(2)
-        : entry.outcome === "LOSS" && orig
-        ? orig.stopLoss.toFixed(2)
+        : entry.outcome === "LOSS"
+        ? defaultSl
         : defaultTp
     );
     setTradingSession(entry.session || freshSession.session);
@@ -903,6 +942,7 @@ export function JournalDashboardClient({
           lotSize: parseFloat(lotSize) || 0.1,
           executionPrice: parseFloat(executionPrice) || 0,
           targetTpPrice: targetTpPrice ? parseFloat(targetTpPrice) : null,
+          targetSlPrice: targetSlPrice ? parseFloat(targetSlPrice) : null,
           exitPrice:
             selectedStatus !== "OPEN" && exitPrice
               ? parseFloat(exitPrice)
@@ -919,12 +959,14 @@ export function JournalDashboardClient({
 
       if (res.ok) {
         const updated = await res.json();
+        const parsedSlVal = targetSlPrice ? parseFloat(targetSlPrice) : null;
         try {
           const currentMetaStr = localStorage.getItem("synth_trade_meta");
           const currentMeta = currentMetaStr ? JSON.parse(currentMetaStr) : {};
           currentMeta[editingEntry.id] = {
             journalBookId: assignedJournalId,
             confluences: selectedConfluences,
+            targetSlPrice: parsedSlVal,
           };
           localStorage.setItem("synth_trade_meta", JSON.stringify(currentMeta));
         } catch {}
@@ -935,6 +977,10 @@ export function JournalDashboardClient({
               ? {
                   ...item,
                   ...updated,
+                  targetSlPrice:
+                    parsedSlVal !== null
+                      ? parsedSlVal
+                      : updated.targetSlPrice ?? item.targetSlPrice,
                   journalBookId: assignedJournalId,
                   confluences: selectedConfluences,
                 }
@@ -1476,6 +1522,7 @@ export function JournalDashboardClient({
               sig?.takeProfit1 ??
               (isBuy ? entry.executionPrice + 15 : entry.executionPrice - 15);
             const slPrice =
+              entry.targetSlPrice ??
               sig?.stopLoss ??
               (isBuy ? entry.executionPrice - 10 : entry.executionPrice + 10);
 
@@ -2143,7 +2190,7 @@ export function JournalDashboardClient({
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
                     🔍 Comparativa: Señal Original vs. Tu Ejecución Real
                   </span>
-                  <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                     <div>
                       <span className="block text-[10px] text-zinc-400">
                         Tu Entrada Real
@@ -2165,7 +2212,21 @@ export function JournalDashboardClient({
                     </div>
 
                     <div>
-                      <span className="block text-[10px] text-zinc-400">
+                      <span className="block text-[10px] text-rose-400/90">
+                        Tu SL Configurado
+                      </span>
+                      <span className="font-mono text-sm font-bold text-rose-400">
+                        {(entry.targetSlPrice ?? sl).toFixed(2)}
+                      </span>
+                      <span className="block font-mono text-[10px] text-zinc-400">
+                        {Math.abs((entry.targetSlPrice ?? sl) - sl) < 0.05
+                          ? "= SL de Señal"
+                          : "SL Personalizado"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="block text-[10px] text-emerald-400/90">
                         Tu TP Configurado
                       </span>
                       <span className="font-mono text-sm font-bold text-emerald-400">
@@ -2493,7 +2554,7 @@ export function JournalDashboardClient({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
             <div>
               <label className="block text-[11px] text-zinc-400">
                 Loteaje (Lots)
@@ -2521,6 +2582,51 @@ export function JournalDashboardClient({
               />
             </div>
 
+            {/* Campo Stop Loss (SL) Editable */}
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="block text-[11px] text-rose-400">
+                  Stop Loss (SL)
+                </label>
+                {(editingEntry?.signalSnapshot || editingEntry?.signal) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const origSl = (
+                        editingEntry.signalSnapshot?.stopLoss ??
+                        editingEntry.signal?.stopLoss ??
+                        0
+                      ).toFixed(2);
+                      setTargetSlPrice(origSl);
+                      if (selectedStatus === "LOSS") setExitPrice(origSl);
+                    }}
+                    title="Restablecer al SL original de la señal"
+                    className="font-mono text-[9px] text-rose-400/80 hover:text-rose-300 hover:underline"
+                  >
+                    Señal:{" "}
+                    {(
+                      editingEntry.signalSnapshot?.stopLoss ??
+                      editingEntry.signal?.stopLoss ??
+                      0
+                    ).toFixed(2)}
+                  </button>
+                )}
+              </div>
+              <input
+                type="number"
+                step="0.01"
+                value={targetSlPrice}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTargetSlPrice(val);
+                  if (selectedStatus === "LOSS") {
+                    setExitPrice(val);
+                  }
+                }}
+                className="mt-1 w-full rounded-xl border border-rose-900/60 bg-zinc-900 px-3 py-2 font-mono text-xs font-bold text-rose-400"
+              />
+            </div>
+
             <div>
               <label className="block text-[11px] text-emerald-400">
                 Take Profit (TP)
@@ -2539,21 +2645,34 @@ export function JournalDashboardClient({
               />
             </div>
 
-            <div>
+            <div className="col-span-2 sm:col-span-1 lg:col-span-1">
               <div className="flex items-center justify-between">
                 <label className="block text-[11px] text-zinc-400">
                   Precio Salida
                 </label>
-                {editingEntry?.signal && (
+                {(editingEntry?.signalSnapshot || editingEntry?.signal) && (
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedStatus("LOSS");
-                      setExitPrice(editingEntry.signal!.stopLoss.toFixed(2));
+                      const slVal =
+                        targetSlPrice ||
+                        (
+                          editingEntry.signalSnapshot?.stopLoss ??
+                          editingEntry.signal?.stopLoss ??
+                          0
+                        ).toFixed(2);
+                      setExitPrice(slVal);
                     }}
                     className="font-mono text-[9px] text-rose-400 hover:underline"
                   >
-                    SL: {editingEntry.signal.stopLoss.toFixed(2)}
+                    SL:{" "}
+                    {targetSlPrice ||
+                      (
+                        editingEntry.signalSnapshot?.stopLoss ??
+                        editingEntry.signal?.stopLoss ??
+                        0
+                      ).toFixed(2)}
                   </button>
                 )}
               </div>

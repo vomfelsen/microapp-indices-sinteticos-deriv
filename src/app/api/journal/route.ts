@@ -22,6 +22,7 @@ export async function POST(req: Request) {
       lotSize,
       executionPrice,
       targetTpPrice,
+      targetSlPrice,
       exitPrice,
       riskAmount,
       pnlAmount,
@@ -59,6 +60,12 @@ export async function POST(req: Request) {
         targetTpPrice !== null &&
         targetTpPrice !== ""
           ? Number(targetTpPrice)
+          : null,
+      targetSlPrice:
+        targetSlPrice !== undefined &&
+        targetSlPrice !== null &&
+        targetSlPrice !== ""
+          ? Number(targetSlPrice)
           : null,
       exitPrice:
         exitPrice !== undefined && exitPrice !== null && exitPrice !== ""
