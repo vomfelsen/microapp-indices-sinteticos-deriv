@@ -13,6 +13,8 @@ export function LiveMarketTicker({
     useState<Record<string, MarketQuote>>(initialQuotes);
   const [lastFlash, setLastFlash] = useState<boolean>(false);
 
+  const [feedType, setFeedType] = useState<"REAL" | "DEMO" | "LIVE_PUBLIC" | "BASE">("BASE");
+
   useEffect(() => {
     // 1. Polling de respaldo cada 4s
     const interval = setInterval(async () => {
@@ -32,16 +34,30 @@ export function LiveMarketTicker({
     }, 4000);
 
     // 2. Suscripción en Tiempo Real directa al WebSocket de Deriv
+    let unsubTicks: (() => void) | undefined;
+    let unsubStatus: (() => void) | undefined;
+
     import("@/lib/deriv-ws").then(({ getDerivClient, DERIV_SYMBOLS }) => {
       const client = getDerivClient();
-      const unsub = client.subscribeTicks((tick) => {
+
+      unsubStatus = client.subscribeStatus((st, acc) => {
+        if (st === "authorized" && acc) {
+          setFeedType(acc.isVirtual ? "DEMO" : "REAL");
+        } else if (st === "connected_live") {
+          setFeedType("LIVE_PUBLIC");
+        } else {
+          setFeedType("BASE");
+        }
+      });
+
+      unsubTicks = client.subscribeTicks((tick) => {
         const meta = DERIV_SYMBOLS[tick.symbol];
         if (meta) {
           setQuotes((prev) => {
             const current = prev[meta.displayName] || {
               asset: meta.displayName,
               price: tick.price,
-              source: "Deriv WebSocket Live",
+              source: tick.source ?? "Deriv WebSocket Live",
               updatedAt: new Date().toISOString(),
             };
             return {
@@ -49,7 +65,7 @@ export function LiveMarketTicker({
               [meta.displayName]: {
                 ...current,
                 price: tick.price,
-                source: "Deriv WebSocket Live (Real-Time)",
+                source: tick.source ?? "Deriv WebSocket Live (Real-Time)",
                 updatedAt: new Date().toISOString(),
               },
             };
@@ -58,10 +74,13 @@ export function LiveMarketTicker({
           setTimeout(() => setLastFlash(false), 300);
         }
       });
-      return unsub;
     });
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (unsubTicks) unsubTicks();
+      if (unsubStatus) unsubStatus();
+    };
   }, []);
 
   const { activeIndices, openSettings } = useAppSettings();
@@ -69,17 +88,45 @@ export function LiveMarketTicker({
 
   return (
     <div className="rounded-2xl border border-zinc-800/90 bg-zinc-950 p-3">
-      <div className="mb-2 flex items-center justify-between text-[11px]">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-zinc-400">
+      <div className="mb-2 flex items-center justify-between text-[11px] flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 font-semibold text-zinc-400">
+            <span
+              className={`h-2 w-2 rounded-full transition-transform ${
+                lastFlash
+                  ? "scale-125 theme-accent-bg"
+                  : feedType === "REAL"
+                  ? "bg-rose-500 animate-pulse"
+                  : feedType === "DEMO"
+                  ? "bg-amber-400 animate-pulse"
+                  : "bg-emerald-400 animate-pulse"
+              }`}
+            />
+            Mercado Deriv • Índices Sintéticos ({orderedAssets.length} activos)
+          </span>
+
+          {/* Badge de Verificación de Servidor */}
           <span
-            className={`h-2 w-2 rounded-full transition-transform ${
-              lastFlash
-                ? "scale-125 theme-accent-bg"
-                : "bg-emerald-400 animate-pulse"
+            className={`font-mono text-[9px] font-black px-1.5 py-0.5 rounded border ${
+              feedType === "REAL"
+                ? "border-rose-500/40 bg-rose-500/10 text-rose-300"
+                : feedType === "DEMO"
+                ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                : feedType === "LIVE_PUBLIC"
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                : "border-zinc-800 bg-zinc-900 text-zinc-400"
             }`}
-          />
-          Mercado Deriv 24/7 • Índices Sintéticos ({orderedAssets.length} activos)
-        </span>
+          >
+            {feedType === "REAL"
+              ? "🔴 SERVIDOR REAL OFICIAL"
+              : feedType === "DEMO"
+              ? "🟡 SERVIDOR DEMO (INDEPENDIENTE)"
+              : feedType === "LIVE_PUBLIC"
+              ? "🟢 DERIV WS PÚBLICO"
+              : "⚠️ BASE CALIBRADO"}
+          </span>
+        </div>
+
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -89,7 +136,7 @@ export function LiveMarketTicker({
             ⚙️ Filtrar Índices
           </button>
           <span className="font-mono text-[10px] text-zinc-500">
-            Auto-refresh 4s
+            En vivo
           </span>
         </div>
       </div>

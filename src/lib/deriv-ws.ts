@@ -20,6 +20,9 @@ export interface DerivTick {
   symbol: string;
   price: number;
   epoch: number;
+  isLive?: boolean;
+  accountType?: "REAL" | "DEMO" | "SIMULATED";
+  source?: string;
 }
 
 export interface DerivSymbolMeta {
@@ -346,6 +349,9 @@ class DerivWebSocketClient {
 
       // Iniciar motor de respaldo 24/7 (garantiza ticks continuos siempre)
       this.startSimulationEngine();
+
+      // Conexión automática inmediata a los servidores de Deriv en vivo al cargar
+      this.connect();
     }
   }
 
@@ -428,6 +434,30 @@ class DerivWebSocketClient {
     }
   }
 
+  public isRealAccount(): boolean {
+    return this.status === "authorized" && this.account !== null && !this.account.isVirtual;
+  }
+
+  public isDemoAccount(): boolean {
+    return this.status === "authorized" && this.account !== null && this.account.isVirtual;
+  }
+
+  public getPriceSource(): "REAL_LIVE" | "DEMO_LIVE" | "PUBLIC_WS" | "CALIBRATED_FALLBACK" {
+    if (this.status === "authorized" && this.account) {
+      return this.account.isVirtual ? "DEMO_LIVE" : "REAL_LIVE";
+    }
+    if (this.status === "connected_live") {
+      return "PUBLIC_WS";
+    }
+    return "CALIBRATED_FALLBACK";
+  }
+
+  private endpointIndex: number = 0;
+  private readonly endpoints: string[] = [
+    "wss://ws.derivws.com/websockets/v3",
+    "wss://ws.binaryws.com/websockets/v3",
+  ];
+
   public connect(customAppId?: string, customToken?: string) {
     if (typeof window === "undefined") return;
 
@@ -450,35 +480,38 @@ class DerivWebSocketClient {
     this.status = "connecting";
     this.notify();
 
-    // Timeout de seguridad: si la red bloquea o tarda más de 3.5s, activar modo respaldo sin error rojo
+    // Timeout de seguridad: si la red bloquea o tarda más de 4s, activar modo respaldo sin bloquear la UI
     const fallbackTimer = setTimeout(() => {
       if (this.status === "connecting") {
         this.status = "sim_fallback";
         this.notify();
       }
-    }, 3500);
+    }, 4000);
 
     try {
-      const endpoint = `wss://ws.derivws.com/websockets/v3?app_id=${encodeURIComponent(
-        this.appId
-      )}`;
+      const baseHost = this.endpoints[this.endpointIndex % this.endpoints.length];
+      const endpoint = `${baseHost}?app_id=${encodeURIComponent(this.appId)}`;
       const ws = new WebSocket(endpoint);
       this.ws = ws;
 
       ws.onopen = () => {
         clearTimeout(fallbackTimer);
-        this.status = "connected_live";
-        this.notify();
 
-        // 1. Autorizar si el usuario configuró API Token
         if (this.token) {
-          ws.send(JSON.stringify({ authorize: this.token }));
+          // Si hay token, autorizar primero para activar los permisos de la cuenta
+          try {
+            ws.send(JSON.stringify({ authorize: this.token }));
+          } catch {}
+        } else {
+          // Modo público sin token: suscribir directamente a los ticks
+          this.status = "connected_live";
+          this.notify();
+          Object.keys(DERIV_SYMBOLS).forEach((sym) => {
+            try {
+              ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }));
+            } catch {}
+          });
         }
-
-        // 2. Suscribir a los ticks de los índices principales
-        Object.keys(DERIV_SYMBOLS).forEach((sym) => {
-          ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }));
-        });
       };
 
       ws.onmessage = (event) => {
@@ -486,6 +519,7 @@ class DerivWebSocketClient {
           const data = JSON.parse(event.data);
 
           if (data.msg_type === "authorize" && data.authorize) {
+            clearTimeout(fallbackTimer);
             this.account = {
               loginid: data.authorize.loginid,
               balance: Number(data.authorize.balance),
@@ -495,22 +529,46 @@ class DerivWebSocketClient {
             };
             this.status = "authorized";
             this.notify();
+
+            // Una vez autorizada la cuenta (Real o Demo), suscribir a todos los ticks del servidor correspondiente
+            Object.keys(DERIV_SYMBOLS).forEach((sym) => {
+              try {
+                ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }));
+              } catch {}
+            });
           } else if (data.msg_type === "tick" && data.tick) {
             const sym = data.tick.symbol;
             const quote = Number(data.tick.quote);
             this.lastLiveTickTime.set(sym, Date.now());
             this.latestPrices.set(sym, quote);
+            
+            const isVirtual = Boolean(this.account?.isVirtual);
+            const sourceName = this.account
+              ? isVirtual
+                ? "Deriv Demo Server (Live)"
+                : "Deriv Real Server (Live)"
+              : "Deriv WebSocket (Live)";
+
             this.notifyTick({
               symbol: sym,
               price: quote,
               epoch: data.tick.epoch,
+              isLive: true,
+              accountType: this.account ? (isVirtual ? "DEMO" : "REAL") : "SIMULATED",
+              source: sourceName,
             });
           } else if (data.error) {
-            // Manejo silencioso de error de token inválido
+            // Manejo de error si el token expiró o fue inválido
             if (data.msg_type === "authorize") {
               this.status = "connected_live";
               this.account = null;
               this.notify();
+              // Suscribir en modo público si falló el authorize
+              Object.keys(DERIV_SYMBOLS).forEach((sym) => {
+                try {
+                  ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }));
+                } catch {}
+              });
             }
           }
         } catch {}
@@ -518,8 +576,7 @@ class DerivWebSocketClient {
 
       ws.onerror = () => {
         clearTimeout(fallbackTimer);
-        // En lugar de console.error que dispara alertas rojas en Next.js,
-        // pasamos limpiamente a sim_fallback mientras mantenemos los datos vivos.
+        this.endpointIndex++;
         this.status = "sim_fallback";
         this.notify();
       };

@@ -93,16 +93,27 @@ export function DerivConnectionModal() {
           }`}
         />
         {status === "authorized" && account ? (
-          <span className="font-mono text-[11px] font-semibold text-emerald-300">
-            {account.isVirtual ? "Demo" : "Real"}: ${account.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })} {account.currency}
+          <span className="font-mono text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5">
+            <span
+              className={`rounded px-1.5 py-0.5 text-[9px] font-black ${
+                account.isVirtual
+                  ? "bg-amber-400 text-zinc-950"
+                  : "bg-rose-500 text-white shadow-sm"
+              }`}
+            >
+              {account.isVirtual ? "DEMO" : "REAL"}
+            </span>
+            <span>
+              {account.loginid}: ${account.balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
           </span>
         ) : status === "connected_live" ? (
           <span className="font-mono text-[11px] font-medium text-emerald-300">
-            Deriv WS Live
+            🟢 Deriv WS Live
           </span>
         ) : status === "sim_fallback" ? (
           <span className="font-mono text-[11px] font-medium text-amber-300">
-            Deriv Ticks 24/7
+            ⚠️ Deriv Base Calibrado
           </span>
         ) : status === "connecting" ? (
           <span className="text-[11px] text-zinc-400">Conectando Deriv...</span>
@@ -125,7 +136,7 @@ export function DerivConnectionModal() {
                     Deriv Trading & Ticks en Tiempo Real
                   </h3>
                   <p className="text-[11px] text-zinc-400">
-                    Sincronización de Precios Spot & API Oficial
+                    Verificación de Servidor Real vs Demo & Sincronización Spot
                   </p>
                 </div>
               </div>
@@ -150,7 +161,7 @@ export function DerivConnectionModal() {
                 }`}
               >
                 <Key className="h-3.5 w-3.5" />
-                <span>API Token & Cuenta</span>
+                <span>API Token & Cuenta Real/Demo</span>
               </button>
               <button
                 type="button"
@@ -166,19 +177,22 @@ export function DerivConnectionModal() {
               </button>
             </div>
 
-            {/* Estado actual */}
+            {/* Estado actual y Diagnóstico de Servidor */}
             <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-zinc-400">Estado:</span>
+                <span className="text-zinc-400">Origen de Precios:</span>
                 <span className="font-mono font-bold">
-                  {status === "authorized" && (
-                    <span className="text-emerald-400">🟢 Autorizado con Token Oficial</span>
+                  {status === "authorized" && account && !account.isVirtual && (
+                    <span className="text-emerald-400">🔴 Servidor REAL Deriv (Producción)</span>
+                  )}
+                  {status === "authorized" && account && account.isVirtual && (
+                    <span className="text-amber-400">🟡 Servidor DEMO Deriv (Virtual)</span>
                   )}
                   {status === "connected_live" && (
                     <span className="text-emerald-400">🟢 Conectado a WebSocket Deriv (Público)</span>
                   )}
                   {status === "sim_fallback" && (
-                    <span className="text-amber-400">🟡 Motor Cuántico Activo (Ticks 24/7)</span>
+                    <span className="text-amber-400">⚠️ Precios Base Calibrados (Offline)</span>
                   )}
                   {status === "connecting" && (
                     <span className="text-sky-400">🔄 Conectando a Deriv...</span>
@@ -203,6 +217,18 @@ export function DerivConnectionModal() {
                       ${account.balance.toFixed(2)} {account.currency}
                     </span>
                   </div>
+                </div>
+              )}
+
+              {/* Alertas explicativas de Real vs Demo */}
+              {account?.isVirtual && (
+                <div className="mt-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200/90 leading-relaxed">
+                  ⚠️ <strong>Aviso Importante:</strong> Has conectado una cuenta <strong>DEMO (VRTC...)</strong>. En Deriv, los índices sintéticos de cuenta Demo corren en un servidor independiente y <strong>no coinciden tick a tick</strong> con los gráficos de cuenta Real. Para ver precios idénticos a tus gráficos de cuenta Real, conecta un API Token generado desde tu cuenta Real (CR...).
+                </div>
+              )}
+              {account && !account.isVirtual && (
+                <div className="mt-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2 text-[11px] text-emerald-200/90 leading-relaxed">
+                  ✓ <strong>Servidor Real Activo:</strong> Estás conectado a la cuenta Real <strong>{account.loginid}</strong>. Todos los ticks y precios coinciden con tu gráfico real de Deriv.
                 </div>
               )}
             </div>

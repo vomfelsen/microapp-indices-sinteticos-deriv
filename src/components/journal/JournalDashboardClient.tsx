@@ -701,7 +701,7 @@ export function JournalDashboardClient({
                 symbolCode: tick.symbol,
                 spread: current?.spread ?? meta.pip * 2,
                 price: tick.price,
-                source: "Deriv WebSocket Live",
+                source: tick.source ?? "Deriv WebSocket Live",
                 updatedAt: new Date().toISOString(),
               },
             };
