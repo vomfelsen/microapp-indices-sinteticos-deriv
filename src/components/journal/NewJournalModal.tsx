@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { JournalBook, JournalColor } from "./types";
-import { BookOpen, X, Shield, Target, Plus, Check, Trash2, Edit3 } from "lucide-react";
+import { BookOpen, X, Shield, Target, Plus, Check, Trash2, Edit3, Bot, Zap } from "lucide-react";
 
 interface NewJournalModalProps {
   isOpen: boolean;
@@ -39,6 +39,14 @@ export function NewJournalModal({
   const [maxDailyLossUsd, setMaxDailyLossUsd] = useState<number>(150);
   const [color, setColor] = useState<JournalColor>("amber");
 
+  // Parámetros de Auto-Trading para esta bitácora
+  const [autoTradeEnabled, setAutoTradeEnabled] = useState<boolean>(false);
+  const [autoTradeLotSize, setAutoTradeLotSize] = useState<number>(0.2);
+  const [autoTradeTargetTp, setAutoTradeTargetTp] = useState<"TP1" | "TP2">("TP1");
+  const [autoTradeMaxRiskUsd, setAutoTradeMaxRiskUsd] = useState<number>(50);
+  const [autoTradeOnlyInZone, setAutoTradeOnlyInZone] = useState<boolean>(true);
+  const [autoTradeMinWinRate, setAutoTradeMinWinRate] = useState<number>(70);
+
   useEffect(() => {
     if (initialBook) {
       setName(initialBook.name);
@@ -47,6 +55,14 @@ export function NewJournalModal({
       setTargetDailyTrades(initialBook.targetDailyTrades || 2);
       setMaxDailyLossUsd(initialBook.maxDailyLossUsd || 150);
       setColor(initialBook.color || "amber");
+
+      const at = initialBook.autoTrade;
+      setAutoTradeEnabled(Boolean(at?.enabled));
+      setAutoTradeLotSize(at?.defaultLotSize ?? 0.2);
+      setAutoTradeTargetTp(at?.targetTp ?? "TP1");
+      setAutoTradeMaxRiskUsd(at?.maxRiskPerTradeUsd ?? 50);
+      setAutoTradeOnlyInZone(at?.onlyInEntryZone ?? true);
+      setAutoTradeMinWinRate(at?.minStrategyWinRate ?? 70);
     } else {
       setName("");
       setDescription("");
@@ -54,6 +70,13 @@ export function NewJournalModal({
       setTargetDailyTrades(2);
       setMaxDailyLossUsd(150);
       setColor("amber");
+
+      setAutoTradeEnabled(false);
+      setAutoTradeLotSize(0.2);
+      setAutoTradeTargetTp("TP1");
+      setAutoTradeMaxRiskUsd(50);
+      setAutoTradeOnlyInZone(true);
+      setAutoTradeMinWinRate(70);
     }
   }, [initialBook, isOpen]);
 
@@ -71,6 +94,14 @@ export function NewJournalModal({
         targetDailyTrades: Number(targetDailyTrades) || 2,
         maxDailyLossUsd: Number(maxDailyLossUsd) || 150,
         color,
+        autoTrade: {
+          enabled: autoTradeEnabled,
+          defaultLotSize: Math.max(0.01, Number(autoTradeLotSize) || 0.2),
+          targetTp: autoTradeTargetTp,
+          maxRiskPerTradeUsd: Math.max(5, Number(autoTradeMaxRiskUsd) || 50),
+          onlyInEntryZone: autoTradeOnlyInZone,
+          minStrategyWinRate: Math.max(50, Math.min(100, Number(autoTradeMinWinRate) || 70)),
+        },
       },
       initialBook?.id
     );
@@ -234,6 +265,158 @@ export function NewJournalModal({
                 );
               })}
             </div>
+          </div>
+
+          {/* SECCIÓN AUTO-TRADING DE SEÑALES */}
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                  autoTradeEnabled ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/50" : "bg-zinc-800 text-zinc-400"
+                }`}>
+                  <Bot className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                    <span>Tomar Señales Automáticamente</span>
+                    {autoTradeEnabled && (
+                      <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
+                        ACTIVO
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[10px] text-zinc-400">
+                    Toma operaciones solas en esta bitácora respetando de forma estricta las reglas del plan.
+                  </p>
+                </div>
+              </div>
+
+              {/* Switch Toggle */}
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={autoTradeEnabled}
+                  onChange={(e) => setAutoTradeEnabled(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="peer h-6 w-11 rounded-full bg-zinc-800 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-zinc-600 after:bg-zinc-300 after:transition-all after:content-[''] peer-checked:bg-emerald-500 peer-checked:after:translate-x-full peer-checked:after:border-white peer-checked:after:bg-white peer-focus:outline-none"></div>
+              </label>
+            </div>
+
+            {/* Parámetros de Auto-Trading cuando está activo */}
+            {autoTradeEnabled && (
+              <div className="mt-4 space-y-3.5 border-t border-zinc-800/80 pt-3.5 animate-in fade-in slide-in-from-top-2">
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/15 p-2.5 text-[11px] text-emerald-300">
+                  🛡️ <strong>Reglas del Plan Activas:</strong> El bot tomará señales institucionales hasta un máximo de{" "}
+                  <strong>{maxDailyTrades} trades/día</strong>. Si se alcanza esa cuota o una pérdida de{" "}
+                  <strong>${maxDailyLossUsd} USD</strong>, se detendrá inmediatamente para proteger tu capital.
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {/* Loteaje Automático */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-zinc-300">
+                      Loteaje por Trade
+                    </label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0.01}
+                      required
+                      value={autoTradeLotSize}
+                      onChange={(e) => setAutoTradeLotSize(parseFloat(e.target.value) || 0.01)}
+                      className="mt-1 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-1.5 font-mono text-xs text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                    />
+                    <span className="text-[9px] text-zinc-500">Ej: 0.10, 0.20, 0.50</span>
+                  </div>
+
+                  {/* Objetivo TP */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-zinc-300">
+                      Objetivo de Salida (TP)
+                    </label>
+                    <div className="mt-1 flex gap-1 font-mono text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setAutoTradeTargetTp("TP1")}
+                        className={`flex-1 rounded-xl py-1.5 text-center font-bold transition-all ${
+                          autoTradeTargetTp === "TP1"
+                            ? "bg-emerald-500 text-white shadow-sm"
+                            : "border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200"
+                        }`}
+                      >
+                        TP1 (1.8R)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAutoTradeTargetTp("TP2")}
+                        className={`flex-1 rounded-xl py-1.5 text-center font-bold transition-all ${
+                          autoTradeTargetTp === "TP2"
+                            ? "bg-emerald-500 text-white shadow-sm"
+                            : "border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200"
+                        }`}
+                      >
+                        TP2 (3.2R)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Riesgo Máximo por Trade */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-zinc-300">
+                      Riesgo Máx / Trade ($)
+                    </label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs text-zinc-500">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min={5}
+                        step={5}
+                        value={autoTradeMaxRiskUsd}
+                        onChange={(e) => setAutoTradeMaxRiskUsd(parseFloat(e.target.value) || 10)}
+                        className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-1.5 pl-6 pr-3 font-mono text-xs text-zinc-100 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                    <span className="text-[9px] text-zinc-500">Si el SL supera esto, no entra</span>
+                  </div>
+                </div>
+
+                {/* Filtros avanzados de validación */}
+                <div className="space-y-2 rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-2.5">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-300 hover:text-zinc-100">
+                    <input
+                      type="checkbox"
+                      checked={autoTradeOnlyInZone}
+                      onChange={(e) => setAutoTradeOnlyInZone(e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500"
+                    />
+                    <span>
+                      🎯 <strong>Esperar zona de entrada:</strong> Solo ejecutar si el precio spot está dentro de la zona oficial
+                    </span>
+                  </label>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-800/60">
+                    <span className="text-zinc-400">
+                      ⚡ <strong>Calidad de Estrategia:</strong> Win Rate mínimo
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={50}
+                        max={95}
+                        step={5}
+                        value={autoTradeMinWinRate}
+                        onChange={(e) => setAutoTradeMinWinRate(parseInt(e.target.value, 10) || 70)}
+                        className="w-16 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-0.5 font-mono text-xs text-emerald-400 text-right focus:border-emerald-500 focus:outline-none"
+                      />
+                      <span className="font-mono text-xs text-zinc-400">%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Botones de acción */}

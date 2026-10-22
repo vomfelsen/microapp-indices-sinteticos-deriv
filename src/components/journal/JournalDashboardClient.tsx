@@ -35,6 +35,7 @@ import {
   FolderPlus,
   CheckCircle2,
   Sparkles,
+  Bot,
 } from "lucide-react";
 
 export interface EnrichedJournalEntry extends AppJournalEntry {
@@ -355,6 +356,17 @@ export function JournalDashboardClient({
     }).length;
   }, [activeEntries, todayIsoDate]);
 
+  const todayRealizedLoss = useMemo(() => {
+    return activeEntries.reduce((sum, e) => {
+      const d = e.createdAt ? e.createdAt.slice(0, 10) : "";
+      if (d !== todayIsoDate) return sum;
+      if (e.outcome === "LOSS") {
+        return sum + Math.abs(Math.min(0, e.pnlAmount));
+      }
+      return sum;
+    }, 0);
+  }, [activeEntries, todayIsoDate]);
+
   const isDailyLimitReached =
     currentJournal.id !== "ALL_BOOKS" &&
     todayTradesCount >= currentJournal.maxDailyTrades;
@@ -494,6 +506,179 @@ export function JournalDashboardClient({
   );
 
   // ==========================================
+  // MOTOR DE AUTO-TRADING: TOMA AUTOMÁTICA DE SEÑALES SEGÚN EL PLAN DE CADA BITÁCORA
+  // ==========================================
+  const autoTradingExecutionLockRef = useRef<Set<string>>(new Set());
+
+  const checkAndExecuteAutoTrades = useCallback(
+    async (freshQuotes: Record<string, MarketQuote>) => {
+      const autoBooks = journalBooks.filter((b) => b.autoTrade?.enabled);
+      if (autoBooks.length === 0) return;
+
+      try {
+        const sigRes = await fetch("/api/signals", { cache: "no-store" });
+        if (!sigRes.ok) return;
+        const sigData = await sigRes.json();
+        const activeSignals = (sigData.signals || []) as any[];
+        if (activeSignals.length === 0) return;
+
+        for (const book of autoBooks) {
+          const cfg = book.autoTrade!;
+          if (!cfg.enabled) continue;
+
+          // REGLA 1: Máximo de operaciones al día (Anti-Overtrading)
+          const bookTodayTradesCount = entries.filter((e) => {
+            if (e.isDeleted) return false;
+            const bId = (e as any).journalBookId || "jb_main";
+            if (bId !== book.id) return false;
+            const d = e.createdAt ? e.createdAt.slice(0, 10) : "";
+            return d === todayIsoDate;
+          }).length;
+
+          if (bookTodayTradesCount >= book.maxDailyTrades) {
+            continue; // Límite diario alcanzado en esta bitácora, saltar
+          }
+
+          // REGLA 2: Pérdida máxima diaria permitida (Control de Drawdown)
+          if (book.maxDailyLossUsd && book.maxDailyLossUsd > 0) {
+            const bookTodayLossUsd = entries
+              .filter((e) => {
+                if (e.isDeleted) return false;
+                const bId = (e as any).journalBookId || "jb_main";
+                if (bId !== book.id) return false;
+                const d = e.createdAt ? e.createdAt.slice(0, 10) : "";
+                return d === todayIsoDate && e.pnlAmount < 0;
+              })
+              .reduce((sum, e) => sum + Math.abs(e.pnlAmount), 0);
+
+            if (bookTodayLossUsd >= book.maxDailyLossUsd) {
+              continue; // Pérdida máxima diaria alcanzada en esta bitácora, pausar
+            }
+          }
+
+          // Evaluar señales disponibles
+          for (const signal of activeSignals) {
+            if (signal.status !== "ACTIVE") continue;
+
+            const lockKey = `${book.id}_${signal.id}`;
+            if (autoTradingExecutionLockRef.current.has(lockKey)) continue;
+
+            // No duplicar: verificar si ya está tomada en el journal
+            const alreadyTaken = entries.some(
+              (e) => !e.isDeleted && e.signalId === signal.id
+            );
+            if (alreadyTaken) continue;
+
+            // Filtro de Calidad: Win Rate mínimo de estrategia
+            const winRate = Number(signal.strategyWinRate) || 75;
+            if (cfg.minStrategyWinRate && winRate < cfg.minStrategyWinRate) {
+              continue;
+            }
+
+            // Filtro de Precio Spot y Zona de Entrada
+            const spot =
+              freshQuotes[signal.asset]?.price ?? Number(signal.entryPrice);
+            if (!spot) continue;
+
+            if (cfg.onlyInEntryZone) {
+              const dir = signal.direction;
+              const entryMin = Number(signal.entryPrice);
+              const entryMax = signal.entryZoneMax
+                ? Number(signal.entryZoneMax)
+                : entryMin;
+
+              const isWithin =
+                dir === "BUY"
+                  ? spot >= Math.min(entryMin, entryMax) * 0.998 &&
+                    spot <= Math.max(entryMin, entryMax) * 1.002
+                  : spot <= Math.max(entryMin, entryMax) * 1.002 &&
+                    spot >= Math.min(entryMin, entryMax) * 0.998;
+
+              if (!isWithin) {
+                continue;
+              }
+            }
+
+            // Cálculo y validación de riesgo máximo
+            const lots = cfg.defaultLotSize || 0.2;
+            const slPrice = Number(signal.stopLoss);
+            const tpPrice =
+              cfg.targetTp === "TP2" && signal.takeProfit2
+                ? Number(signal.takeProfit2)
+                : Number(signal.takeProfit1);
+
+            const multiplier = getContractMultiplier(signal.asset);
+            const riskUsd = Math.abs(spot - slPrice) * lots * multiplier;
+
+            if (cfg.maxRiskPerTradeUsd && riskUsd > cfg.maxRiskPerTradeUsd) {
+              continue;
+            }
+
+            // EJECUTAR AUTO-TRADE
+            autoTradingExecutionLockRef.current.add(lockKey);
+
+            try {
+              const res = await fetch("/api/journal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  signalId: signal.id,
+                  outcome: "OPEN",
+                  lotSize: lots,
+                  executionPrice: Number(spot.toFixed(2)),
+                  targetTpPrice: Number(tpPrice.toFixed(2)),
+                  targetSlPrice: Number(slPrice.toFixed(2)),
+                  exitPrice: null,
+                  riskAmount: Number(riskUsd.toFixed(2)),
+                  pnlAmount: 0,
+                  tradingSession: detectedSessionInfo.session,
+                  followedPlan: true,
+                  emotionState: "🤖 Auto-Trading (Plan)",
+                  emotionNote: `🤖 Auto-Trade ejecutado en bitácora [${book.name}] respetando reglas del plan diario (Trade ${bookTodayTradesCount + 1}/${book.maxDailyTrades}).`,
+                }),
+              });
+
+              if (res.ok) {
+                const created = await res.json();
+                try {
+                  const currentMetaStr = localStorage.getItem("synth_trade_meta");
+                  const currentMeta = currentMetaStr ? JSON.parse(currentMetaStr) : {};
+                  currentMeta[created.id] = {
+                    journalBookId: book.id,
+                    confluences: ["🤖 Auto-Trade", "🛡️ Regla Plan Diario", "⚡ Entrada en Zona"],
+                    targetSlPrice: slPrice,
+                  };
+                  localStorage.setItem("synth_trade_meta", JSON.stringify(currentMeta));
+                } catch {}
+
+                setEntries((prev) => [
+                  {
+                    ...created,
+                    signal,
+                    journalBookId: book.id,
+                    confluences: ["🤖 Auto-Trade", "🛡️ Regla Plan Diario", "⚡ Entrada en Zona"],
+                    targetSlPrice: slPrice,
+                  },
+                  ...prev,
+                ]);
+
+                setAutoCloseAlert(
+                  `🤖 Auto-Trade ejecutado en ${signal.asset}: Señal tomada en "${book.name}" (Entrada: ${spot.toFixed(2)}, SL: ${slPrice.toFixed(2)}, TP: ${tpPrice.toFixed(2)}). Trade ${bookTodayTradesCount + 1} de ${book.maxDailyTrades}.`
+                );
+                router.refresh();
+                break;
+              }
+            } catch (err) {
+              console.error("Error auto-taking trade:", err);
+            }
+          }
+        }
+      } catch {}
+    },
+    [journalBooks, entries, todayIsoDate, detectedSessionInfo.session, router]
+  );
+
+  // ==========================================
   // MONITOREO EN TIEMPO REAL DE PRECIOS SPOT Y AUTO-CIERRE POR SL / TP
   // ==========================================
   useEffect(() => {
@@ -563,6 +748,9 @@ export function JournalDashboardClient({
             }
           }
         }
+
+        // Evaluar Auto-Trading de señales según el plan de cada bitácora
+        await checkAndExecuteAutoTrades(freshQuotes);
       } catch {
         // Silencioso en caso de error de red
       }
@@ -570,7 +758,7 @@ export function JournalDashboardClient({
 
     const interval = setInterval(checkAndPoll, 6000);
     return () => clearInterval(interval);
-  }, [activeEntries, triggerAutoCloseTrade]);
+  }, [activeEntries, triggerAutoCloseTrade, checkAndExecuteAutoTrades]);
 
   // ==========================================
   // MOTOR DE MÉTRICAS ESTÁNDAR (Excluye entradas en la Papelera)
@@ -1119,6 +1307,36 @@ export function JournalDashboardClient({
                 <strong className="text-rose-400 font-bold">
                   ${currentJournal.maxDailyLossUsd} USD
                 </strong>
+                {todayRealizedLoss > 0 && (
+                  <span className="text-zinc-400 ml-1.5">
+                    (Hoy: <span className="text-rose-300 font-semibold">${todayRealizedLoss.toFixed(2)} USD</span>)
+                  </span>
+                )}
+              </div>
+            )}
+            {currentJournal.autoTrade?.enabled && (
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                    isDailyLimitReached ||
+                    (currentJournal.maxDailyLossUsd &&
+                      todayRealizedLoss >= currentJournal.maxDailyLossUsd)
+                      ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                  }`}
+                >
+                  <Bot className="h-3.5 w-3.5" />
+                  {isDailyLimitReached ||
+                  (currentJournal.maxDailyLossUsd &&
+                    todayRealizedLoss >= currentJournal.maxDailyLossUsd)
+                    ? "Auto-Trading: Pausado (Límite del plan alcanzado)"
+                    : `Auto-Trading: Activo (${currentJournal.autoTrade.defaultLotSize} lotes • ${currentJournal.autoTrade.targetTp})`}
+                </span>
+                {currentJournal.autoTrade.onlyInEntryZone && (
+                  <span className="text-[11px] text-zinc-400">
+                    • Esperando precio en Zona Institucional
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -2960,6 +3178,7 @@ export function JournalDashboardClient({
         targetDailyTrades={currentJournal.targetDailyTrades}
         isDailyLimitReached={isDailyLimitReached}
         dailyTradesPercent={dailyTradesPercent}
+        autoTradeEnabled={Boolean(currentJournal.autoTrade?.enabled)}
       />
     </div>
   );

@@ -7,6 +7,15 @@ export interface ChecklistItem {
   category: "technical" | "risk" | "psychology" | "custom";
 }
 
+export interface JournalAutoTradeSettings {
+  enabled: boolean;
+  defaultLotSize: number;
+  targetTp: "TP1" | "TP2";
+  maxRiskPerTradeUsd?: number;
+  onlyInEntryZone?: boolean;
+  minStrategyWinRate?: number;
+}
+
 export interface JournalBook {
   id: string;
   name: string;
@@ -15,6 +24,7 @@ export interface JournalBook {
   maxDailyTrades: number;
   targetDailyTrades: number;
   maxDailyLossUsd?: number;
+  autoTrade?: JournalAutoTradeSettings;
   checklist?: ChecklistItem[];
   createdAt: string;
   isDefault?: boolean;

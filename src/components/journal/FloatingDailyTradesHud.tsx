@@ -10,6 +10,7 @@ interface FloatingDailyTradesHudProps {
   targetDailyTrades: number;
   isDailyLimitReached: boolean;
   dailyTradesPercent: number;
+  autoTradeEnabled?: boolean;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -21,6 +22,7 @@ export function FloatingDailyTradesHud({
   targetDailyTrades,
   isDailyLimitReached,
   dailyTradesPercent,
+  autoTradeEnabled,
   isOpen,
   onClose,
 }: FloatingDailyTradesHudProps) {
@@ -183,6 +185,18 @@ export function FloatingDailyTradesHud({
                   {dailyTradesPercent}%
                 </span>
               </div>
+
+              {autoTradeEnabled && (
+                <div className="mt-1 flex items-center justify-between rounded-lg bg-zinc-900/80 px-2 py-1 text-[10px] border border-zinc-800/80">
+                  <span className="flex items-center gap-1.5 text-zinc-300">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isDailyLimitReached ? "bg-amber-400" : "bg-emerald-400 animate-ping"}`} />
+                    <span className="font-bold">Auto-Trade:</span>
+                  </span>
+                  <span className={`font-bold font-mono ${isDailyLimitReached ? "text-amber-400" : "text-emerald-400"}`}>
+                    {isDailyLimitReached ? "Pausa (Plan)" : "Vigilando"}
+                  </span>
+                </div>
+              )}
 
               {isDailyLimitReached && (
                 <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-rose-400">
