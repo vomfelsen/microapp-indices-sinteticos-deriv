@@ -679,6 +679,39 @@ export function JournalDashboardClient({
   );
 
   // ==========================================
+  // SUSCRIPCIÓN EN TIEMPO REAL AL WEBSOCKET DE DERIV (Cliente)
+  // ==========================================
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    import("@/lib/deriv-ws").then(({ getDerivClient, DERIV_SYMBOLS }) => {
+      const client = getDerivClient();
+      unsub = client.subscribeTicks((tick) => {
+        const meta = DERIV_SYMBOLS[tick.symbol];
+        if (meta) {
+          setQuotes((prev) => {
+            const current = prev[meta.displayName];
+            return {
+              ...prev,
+              [meta.displayName]: {
+                ...current,
+                asset: meta.displayName,
+                symbolCode: tick.symbol,
+                spread: current?.spread ?? meta.pip * 2,
+                price: tick.price,
+                source: "Deriv WebSocket Live",
+                updatedAt: new Date().toISOString(),
+              },
+            };
+          });
+        }
+      });
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, []);
+
+  // ==========================================
   // MONITOREO EN TIEMPO REAL DE PRECIOS SPOT Y AUTO-CIERRE POR SL / TP
   // ==========================================
   useEffect(() => {

@@ -208,7 +208,7 @@ export const DERIV_SYMBOLS: Record<string, DerivSymbolMeta> = {
     shortName: "STEP",
     decimals: 1,
     pip: 0.1,
-    basePrice: 8642.1,
+    basePrice: 7348.0,
     behavior: "step",
   },
   stpRNG100: {
@@ -326,13 +326,56 @@ class DerivWebSocketClient {
       this.appId = localStorage.getItem("deriv_app_id") || "1089";
       this.token = localStorage.getItem("deriv_api_token") || "";
 
-      // Inicializar precios base
+      // Inicializar precios base y cargar calibraciones personalizadas si existen
       Object.values(DERIV_SYMBOLS).forEach((meta) => {
         this.latestPrices.set(meta.symbol, meta.basePrice);
       });
 
+      try {
+        const customCalib = localStorage.getItem("synth_calibrated_prices");
+        if (customCalib) {
+          const parsed = JSON.parse(customCalib);
+          Object.entries(parsed).forEach(([sym, val]) => {
+            if (DERIV_SYMBOLS[sym] && typeof val === "number") {
+              DERIV_SYMBOLS[sym].basePrice = val;
+              this.latestPrices.set(sym, val);
+            }
+          });
+        }
+      } catch {}
+
       // Iniciar motor de respaldo 24/7 (garantiza ticks continuos siempre)
       this.startSimulationEngine();
+    }
+  }
+
+  public setBasePrice(symbol: string, newPrice: number) {
+    if (DERIV_SYMBOLS[symbol] && typeof newPrice === "number" && !isNaN(newPrice)) {
+      DERIV_SYMBOLS[symbol].basePrice = newPrice;
+      this.latestPrices.set(symbol, newPrice);
+      try {
+        const customCalib = localStorage.getItem("synth_calibrated_prices");
+        const parsed = customCalib ? JSON.parse(customCalib) : {};
+        parsed[symbol] = newPrice;
+        localStorage.setItem("synth_calibrated_prices", JSON.stringify(parsed));
+      } catch {}
+
+      // Notificar tick inmediatamente
+      this.notifyTick({
+        symbol,
+        price: newPrice,
+        epoch: Math.floor(Date.now() / 1000),
+      });
+
+      // También sincronizar con el backend
+      const meta = DERIV_SYMBOLS[symbol];
+      if (meta) {
+        fetch("/api/market/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset: meta.displayName, price: newPrice }),
+        }).catch(() => {});
+      }
     }
   }
 

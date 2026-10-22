@@ -44,7 +44,7 @@ const SYNTHETIC_BASE_PRICES: Record<
   "Crash 300": { base: 1220.8, decimals: 2, symbolCode: "CRASH300N", spread: 0.4 },
 
   // Step Indices
-  "Step Index": { base: 8642.1, decimals: 1, symbolCode: "stpRNG", spread: 0.2 },
+  "Step Index": { base: 7348.0, decimals: 1, symbolCode: "stpRNG", spread: 0.2 },
   "Step Index 100": { base: 10540.2, decimals: 1, symbolCode: "stpRNG100", spread: 0.2 },
   "Step Index 200": { base: 21320.5, decimals: 1, symbolCode: "stpRNG200", spread: 0.2 },
   "Step Index 500": { base: 53410.0, decimals: 1, symbolCode: "stpRNG500", spread: 0.3 },
@@ -63,6 +63,17 @@ const SYNTHETIC_BASE_PRICES: Record<
 
 // Generador de fluctuación cuántica continua en memoria para emular Deriv 24/7
 const dynamicCache: Record<string, { price: number; lastUpdate: number }> = {};
+
+export function updateSyntheticBasePrice(asset: string, price: number) {
+  if (SYNTHETIC_BASE_PRICES[asset]) {
+    SYNTHETIC_BASE_PRICES[asset].base = price;
+  }
+  dynamicCache[asset] = { price, lastUpdate: Date.now() };
+}
+
+export function getSyntheticBasePrices() {
+  return SYNTHETIC_BASE_PRICES;
+}
 
 export async function fetchLiveMarketQuotes(): Promise<
   Record<string, MarketQuote>
