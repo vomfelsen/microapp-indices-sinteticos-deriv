@@ -1,5 +1,9 @@
 node_modules/
-data/db.json
-.DS_Store
-*.log
+.next/
+out/
 .env
+.env.local
+.env*.local
+data/local-db.json
+*.log
+*.tsbuildinfo
