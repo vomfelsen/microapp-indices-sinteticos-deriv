@@ -11,6 +11,7 @@ import type {
   TradingSession,
 } from "@/lib/data-service";
 import type { MarketQuote } from "@/lib/market-prices";
+import { findMarketQuote } from "@/lib/market-prices";
 import {
   calculateTradeMetrics,
   detectTradingSessionByTime,
@@ -230,6 +231,7 @@ export function JournalDashboardClient({
   const [isNewJournalOpen, setIsNewJournalOpen] = useState<boolean>(false);
   const [editingJournalBook, setEditingJournalBook] = useState<JournalBook | null>(null);
   const [showFloatingHud, setShowFloatingHud] = useState<boolean>(true);
+  const [isLiveAutoCloseActive, setIsLiveAutoCloseActive] = useState<boolean>(true);
   const [assignedJournalId, setAssignedJournalId] = useState<string>("jb_main");
   const [selectedConfluences, setSelectedConfluences] = useState<string[]>([]);
 
@@ -424,19 +426,20 @@ export function JournalDashboardClient({
       if (autoClosingIdsRef.current.has(entry.id)) return;
       autoClosingIdsRef.current.add(entry.id);
 
-      const sig = entry.signal;
-      const asset = sig?.asset ?? "Volatility 75";
+      const sig = entry.signalSnapshot ?? entry.signal;
+      const asset = sig?.asset || "Volatility 75";
       const direction = sig?.direction ?? "BUY";
       const sl =
         entry.targetSlPrice ??
         entry.signalSnapshot?.stopLoss ??
-        sig?.stopLoss ??
+        entry.signal?.stopLoss ??
         (direction === "BUY"
           ? entry.executionPrice - 10
           : entry.executionPrice + 10);
       const tp =
         entry.targetTpPrice ??
-        sig?.takeProfit1 ??
+        entry.signalSnapshot?.takeProfit1 ??
+        entry.signal?.takeProfit1 ??
         (direction === "BUY"
           ? entry.executionPrice + 15
           : entry.executionPrice - 15);
@@ -725,59 +728,85 @@ export function JournalDashboardClient({
         const freshQuotes: Record<string, MarketQuote> = data.quotes;
         setQuotes(freshQuotes);
 
-        for (const entry of activeEntries) {
-          if (entry.outcome !== "OPEN") continue;
-          const sig = entry.signal;
-          const asset = sig?.asset ?? "Volatility 75";
-          const spot = freshQuotes[asset]?.price;
-          if (!spot) continue;
+        if (isLiveAutoCloseActive) {
+          for (const entry of activeEntries) {
+            if (entry.outcome !== "OPEN") continue;
+            const sig = entry.signalSnapshot ?? entry.signal;
+            const asset = sig?.asset;
+            if (!asset) continue;
 
-          const direction = sig?.direction ?? "BUY";
-          const tp =
-            entry.targetTpPrice ??
-            sig?.takeProfit1 ??
-            (direction === "BUY"
-              ? entry.executionPrice + 15
-              : entry.executionPrice - 15);
-          const sl =
-            entry.targetSlPrice ??
-            entry.signalSnapshot?.stopLoss ??
-            sig?.stopLoss ??
-            (direction === "BUY"
-              ? entry.executionPrice - 10
-              : entry.executionPrice + 10);
+            // 1. Obtener cotización real normalizada (búsqueda insensible a mayúsculas/código)
+            const quote = findMarketQuote(freshQuotes, asset);
+            if (!quote || typeof quote.price !== "number") continue;
+            const spot = quote.price;
 
-          if (direction === "BUY") {
-            if (spot >= tp) {
-              triggerAutoCloseTrade(
-                entry,
-                "WIN",
-                tp,
-                "Alcanzó Take Profit (TP) en Vivo"
-              );
-            } else if (spot <= sl) {
-              triggerAutoCloseTrade(
-                entry,
-                "LOSS",
-                sl,
-                "Alcanzó Stop Loss (SL) en Vivo"
-              );
+            // 2. Filtro de Coherencia de Escala:
+            // El spot debe pertenecer a la misma escala que executionPrice (máx 35% de variación).
+            // Evita que un trade de Step Index (7348) se compare con V75 (452180) y se cierre de inmediato.
+            const scaleDeviation =
+              Math.abs(spot - entry.executionPrice) / (entry.executionPrice || 1);
+            if (scaleDeviation > 0.35) {
+              continue;
             }
-          } else {
-            if (spot <= tp) {
-              triggerAutoCloseTrade(
-                entry,
-                "WIN",
-                tp,
-                "Alcanzó Take Profit (TP) en Vivo"
-              );
-            } else if (spot >= sl) {
-              triggerAutoCloseTrade(
-                entry,
-                "LOSS",
-                sl,
-                "Alcanzó Stop Loss (SL) en Vivo"
-              );
+
+            // 3. Período de gracia de 6 segundos tras registrar la operación para permitir asentamiento
+            const createdAtMs = entry.createdAt
+              ? new Date(entry.createdAt).getTime()
+              : 0;
+            if (createdAtMs > 0 && Date.now() - createdAtMs < 6000) {
+              continue;
+            }
+
+            const direction = sig?.direction ?? "BUY";
+            const tp =
+              entry.targetTpPrice ??
+              entry.signalSnapshot?.takeProfit1 ??
+              entry.signal?.takeProfit1;
+            const sl =
+              entry.targetSlPrice ??
+              entry.signalSnapshot?.stopLoss ??
+              entry.signal?.stopLoss;
+
+            // 4. Verificación de coherencia matemática de SL y TP
+            if (!sl || !tp) continue;
+            if (direction === "BUY") {
+              // En BUY: SL debe ser menor a la entrada y TP mayor a la entrada
+              if (sl >= entry.executionPrice || tp <= entry.executionPrice) continue;
+
+              if (spot >= tp) {
+                triggerAutoCloseTrade(
+                  entry,
+                  "WIN",
+                  tp,
+                  "Alcanzó Take Profit (TP) en Vivo"
+                );
+              } else if (spot <= sl) {
+                triggerAutoCloseTrade(
+                  entry,
+                  "LOSS",
+                  sl,
+                  "Alcanzó Stop Loss (SL) en Vivo"
+                );
+              }
+            } else {
+              // En SELL: SL debe ser mayor a la entrada y TP menor a la entrada
+              if (sl <= entry.executionPrice || tp >= entry.executionPrice) continue;
+
+              if (spot <= tp) {
+                triggerAutoCloseTrade(
+                  entry,
+                  "WIN",
+                  tp,
+                  "Alcanzó Take Profit (TP) en Vivo"
+                );
+              } else if (spot >= sl) {
+                triggerAutoCloseTrade(
+                  entry,
+                  "LOSS",
+                  sl,
+                  "Alcanzó Stop Loss (SL) en Vivo"
+                );
+              }
             }
           }
         }
@@ -791,7 +820,12 @@ export function JournalDashboardClient({
 
     const interval = setInterval(checkAndPoll, 6000);
     return () => clearInterval(interval);
-  }, [activeEntries, triggerAutoCloseTrade, checkAndExecuteAutoTrades]);
+  }, [
+    activeEntries,
+    triggerAutoCloseTrade,
+    checkAndExecuteAutoTrades,
+    isLiveAutoCloseActive,
+  ]);
 
   // ==========================================
   // MOTOR DE MÉTRICAS ESTÁNDAR (Excluye entradas en la Papelera)
@@ -1289,20 +1323,41 @@ export function JournalDashboardClient({
             )}
           </div>
 
-          {/* Botón para Activar/Desactivar Widget Flotante */}
-          <button
-            type="button"
-            onClick={() => setShowFloatingHud((prev) => !prev)}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all shadow-sm ${
-              showFloatingHud
-                ? "border-amber-400/50 bg-amber-400/10 text-amber-300 ring-1 ring-amber-400/30"
-                : "border-zinc-800 bg-zinc-900/70 text-zinc-400 hover:text-zinc-200"
-            }`}
-            title="Activar o desactivar el monitor flotante movible"
-          >
-            <Target className="h-3.5 w-3.5 text-amber-400" />
-            <span>Monitor Flotante {showFloatingHud ? "Activo" : "Oculto"}</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Botón para Activar/Desactivar Auto-Cierre SL/TP */}
+            <button
+              type="button"
+              onClick={() => setIsLiveAutoCloseActive((prev) => !prev)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all shadow-sm ${
+                isLiveAutoCloseActive
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-500 hover:text-zinc-300"
+              }`}
+              title="Activar o pausar el autocierre automático cuando el precio toca SL o TP"
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  isLiveAutoCloseActive ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"
+                }`}
+              />
+              <span>Auto-Cierre SL/TP: {isLiveAutoCloseActive ? "Activo" : "Pausado"}</span>
+            </button>
+
+            {/* Botón para Activar/Desactivar Widget Flotante */}
+            <button
+              type="button"
+              onClick={() => setShowFloatingHud((prev) => !prev)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all shadow-sm ${
+                showFloatingHud
+                  ? "border-amber-400/50 bg-amber-400/10 text-amber-300 ring-1 ring-amber-400/30"
+                  : "border-zinc-800 bg-zinc-900/70 text-zinc-400 hover:text-zinc-200"
+              }`}
+              title="Activar o desactivar el monitor flotante movible"
+            >
+              <Target className="h-3.5 w-3.5 text-amber-400" />
+              <span>Monitor Flotante {showFloatingHud ? "Activo" : "Oculto"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Resumen & Límites de la Bitácora Activa */}
@@ -1788,7 +1843,8 @@ export function JournalDashboardClient({
                 ).toFixed(2)
               );
 
-            const liveSpot = quotes[asset]?.price ?? entry.executionPrice;
+            const quote = findMarketQuote(quotes, asset);
+            const liveSpot = quote?.price ?? entry.executionPrice;
             const liveDiff = isBuy
               ? liveSpot - entry.executionPrice
               : entry.executionPrice - liveSpot;

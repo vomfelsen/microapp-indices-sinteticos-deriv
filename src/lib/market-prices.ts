@@ -117,3 +117,30 @@ export async function fetchLiveMarketQuotes(): Promise<
 
   return quotes;
 }
+
+export function findMarketQuote(
+  quotes: Record<string, MarketQuote>,
+  assetName?: string | null
+): MarketQuote | undefined {
+  if (!assetName || !quotes) return undefined;
+  if (quotes[assetName]) return quotes[assetName];
+
+  const clean = assetName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const [key, q] of Object.entries(quotes)) {
+    const kClean = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (kClean === clean) return q;
+    if (q.symbolCode && q.symbolCode.toLowerCase() === assetName.toLowerCase()) {
+      return q;
+    }
+  }
+
+  for (const [key, q] of Object.entries(quotes)) {
+    const kClean = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (clean.includes(kClean) || kClean.includes(clean)) {
+      return q;
+    }
+  }
+
+  return undefined;
+}
+
