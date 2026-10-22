@@ -11,6 +11,31 @@ export type SignalStatus = "ACTIVE" | "HIT_TP1" | "HIT_TP2" | "HIT_SL" | "CANCEL
 export type TradeOutcome = "OPEN" | "WIN" | "LOSS" | "BREAKEVEN";
 export type TradingSession = "NEW_YORK" | "LONDON" | "ASIA";
 
+export function sanitizeSlPrice(
+  inputSl: number | null | undefined,
+  direction: "BUY" | "SELL" | undefined,
+  execPrice: number,
+  signalSl: number | null | undefined
+): number {
+  const fallback = signalSl ?? (direction === "BUY" ? execPrice - 10 : execPrice + 10);
+  if (inputSl === null || inputSl === undefined || isNaN(inputSl) || inputSl <= 0) {
+    return fallback;
+  }
+  // Coherencia de escala (máx 35% de desviación del precio de ejecución)
+  const scaleDeviation = Math.abs(inputSl - execPrice) / (execPrice || 1);
+  if (scaleDeviation > 0.35) {
+    return fallback;
+  }
+  // Coherencia matemática de dirección
+  if (direction === "BUY" && inputSl >= execPrice) {
+    return fallback;
+  }
+  if (direction === "SELL" && inputSl <= execPrice) {
+    return fallback;
+  }
+  return inputSl;
+}
+
 export interface AppUser {
   id: string;
   name: string;
@@ -1013,11 +1038,14 @@ export const DataService = {
         : sig
         ? Number(sig.takeProfit1)
         : execPrice + 15;
-      const slPrice = input.targetSlPrice
-        ? Number(input.targetSlPrice)
-        : sig
-        ? Number(sig.stopLoss)
-        : execPrice - 10;
+      
+      const direction = (sig?.direction ?? "BUY") as "BUY" | "SELL";
+      const slPrice = sanitizeSlPrice(
+        input.targetSlPrice !== undefined && input.targetSlPrice !== null ? Number(input.targetSlPrice) : null,
+        direction,
+        execPrice,
+        sig ? Number(sig.stopLoss) : null
+      );
 
       const multiplier = getContractMultiplier(sig?.asset ?? "Volatility 75");
       const estimatedProfit = Number(
@@ -1038,6 +1066,7 @@ export const DataService = {
           ? 0
           : Number((normalizedPnl / risk).toFixed(2));
 
+      // Guardar copia inmutable de la señal original en la bitácora al momento de tomarla
       const snapshot: OriginalSignalSnapshot | null =
         (existing?.signalSnapshot as unknown as OriginalSignalSnapshot) ??
         (sig
@@ -1055,17 +1084,13 @@ export const DataService = {
               entryZoneMax: sig.entryZoneMax
                 ? Number(sig.entryZoneMax)
                 : null,
-              stopLoss: slPrice,
+              stopLoss: Number(sig.stopLoss), // Preserva fielmente el SL original de la señal
               takeProfit1: Number(sig.takeProfit1),
               takeProfit2: sig.takeProfit2 ? Number(sig.takeProfit2) : null,
               signalCreatedAt: sig.createdAt.toISOString(),
               capturedAt: new Date().toISOString(),
             }
           : null);
-
-      if (snapshot && input.targetSlPrice) {
-        snapshot.stopLoss = slPrice;
-      }
 
       const saved = await prisma.journalEntry.upsert({
         where: {
@@ -1155,9 +1180,13 @@ export const DataService = {
     const tpPrice = input.targetTpPrice
       ? Number(input.targetTpPrice)
       : sig?.takeProfit1 ?? execPrice + 15;
-    const slPrice = input.targetSlPrice
-      ? Number(input.targetSlPrice)
-      : sig?.stopLoss ?? execPrice - 10;
+    const direction = (sig?.direction ?? "BUY") as "BUY" | "SELL";
+    const slPrice = sanitizeSlPrice(
+      input.targetSlPrice !== undefined && input.targetSlPrice !== null ? Number(input.targetSlPrice) : null,
+      direction,
+      execPrice,
+      sig?.stopLoss ?? null
+    );
 
     const multiplier = getContractMultiplier(sig?.asset ?? "Volatility 75");
     const estimatedProfit = Number(
@@ -1192,17 +1221,13 @@ export const DataService = {
             strategyTimeframe: strat?.timeframe ?? "M15",
             entryPrice: sig.entryPrice,
             entryZoneMax: sig.entryZoneMax ?? null,
-            stopLoss: slPrice,
+            stopLoss: Number(sig.stopLoss), // Preserva fielmente el SL original de la señal
             takeProfit1: sig.takeProfit1,
             takeProfit2: sig.takeProfit2 ?? null,
             signalCreatedAt: sig.createdAt,
             capturedAt: new Date().toISOString(),
           }
         : null);
-
-    if (snapshot && input.targetSlPrice) {
-      snapshot.stopLoss = slPrice;
-    }
 
     if (existing) {
       existing.outcome = input.outcome;

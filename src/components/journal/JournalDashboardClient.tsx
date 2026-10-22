@@ -260,12 +260,33 @@ export function JournalDashboardClient({
           prev.map((e) => {
             const m = metaMap[e.id];
             if (m) {
+              const sig = e.signalSnapshot ?? e.signal;
+              const direction = sig?.direction ?? "BUY";
+              const isSlValid =
+                typeof m.targetSlPrice === "number" &&
+                !isNaN(m.targetSlPrice) &&
+                (direction === "BUY"
+                  ? m.targetSlPrice < e.executionPrice
+                  : m.targetSlPrice > e.executionPrice) &&
+                Math.abs(m.targetSlPrice - e.executionPrice) / (e.executionPrice || 1) <= 0.35;
+
+              // Si el SL en localStorage está corrupto o es de la escala previa, limpiarlo inmediatamente
+              if (!isSlValid && m.targetSlPrice !== undefined && m.targetSlPrice !== null) {
+                delete m.targetSlPrice;
+                try {
+                  localStorage.setItem("synth_trade_meta", JSON.stringify(metaMap));
+                } catch {}
+              }
+
+              const cleanSl = isSlValid
+                ? m.targetSlPrice
+                : e.targetSlPrice !== undefined && e.targetSlPrice !== null
+                ? e.targetSlPrice
+                : sig?.stopLoss ?? null;
+
               return {
                 ...e,
-                targetSlPrice:
-                  m.targetSlPrice !== undefined
-                    ? m.targetSlPrice
-                    : e.targetSlPrice,
+                targetSlPrice: cleanSl,
                 journalBookId: m.journalBookId || e.journalBookId || "jb_main",
                 confluences: m.confluences || e.confluences || [],
               };
@@ -1025,13 +1046,23 @@ export function JournalDashboardClient({
     setLotSize(String(entry.lotSize));
     setExecutionPrice(entry.executionPrice.toFixed(2));
     const orig = entry.signalSnapshot ?? entry.signal;
+    const direction = orig?.direction ?? "BUY";
     const defaultTp = entry.targetTpPrice
       ? entry.targetTpPrice.toFixed(2)
       : orig
       ? orig.takeProfit1.toFixed(2)
       : entry.executionPrice.toFixed(2);
     setTargetTpPrice(defaultTp);
-    const defaultSl = entry.targetSlPrice
+
+    const isEntrySlValid =
+      typeof entry.targetSlPrice === "number" &&
+      !isNaN(entry.targetSlPrice) &&
+      (direction === "BUY"
+        ? entry.targetSlPrice < entry.executionPrice
+        : entry.targetSlPrice > entry.executionPrice) &&
+      Math.abs(entry.targetSlPrice - entry.executionPrice) / (entry.executionPrice || 1) <= 0.35;
+
+    const defaultSl = isEntrySlValid && entry.targetSlPrice !== undefined && entry.targetSlPrice !== null
       ? entry.targetSlPrice.toFixed(2)
       : orig
       ? orig.stopLoss.toFixed(2)
@@ -1214,14 +1245,19 @@ export function JournalDashboardClient({
 
       if (res.ok) {
         const updated = await res.json();
-        const parsedSlVal = targetSlPrice ? parseFloat(targetSlPrice) : null;
+        const origSignal = editingEntry.signalSnapshot ?? editingEntry.signal;
+        const safeUpdatedSl =
+          updated.targetSlPrice !== undefined && updated.targetSlPrice !== null
+            ? updated.targetSlPrice
+            : origSignal?.stopLoss ?? null;
+
         try {
           const currentMetaStr = localStorage.getItem("synth_trade_meta");
           const currentMeta = currentMetaStr ? JSON.parse(currentMetaStr) : {};
           currentMeta[editingEntry.id] = {
             journalBookId: assignedJournalId,
             confluences: selectedConfluences,
-            targetSlPrice: parsedSlVal,
+            targetSlPrice: safeUpdatedSl,
           };
           localStorage.setItem("synth_trade_meta", JSON.stringify(currentMeta));
         } catch {}
@@ -1232,10 +1268,7 @@ export function JournalDashboardClient({
               ? {
                   ...item,
                   ...updated,
-                  targetSlPrice:
-                    parsedSlVal !== null
-                      ? parsedSlVal
-                      : updated.targetSlPrice ?? item.targetSlPrice,
+                  targetSlPrice: safeUpdatedSl,
                   journalBookId: assignedJournalId,
                   confluences: selectedConfluences,
                 }
@@ -1827,10 +1860,19 @@ export function JournalDashboardClient({
               entry.targetTpPrice ??
               sig?.takeProfit1 ??
               (isBuy ? entry.executionPrice + 15 : entry.executionPrice - 15);
+            const isEntrySlValid =
+              typeof entry.targetSlPrice === "number" &&
+              !isNaN(entry.targetSlPrice) &&
+              (isBuy
+                ? entry.targetSlPrice < entry.executionPrice
+                : entry.targetSlPrice > entry.executionPrice) &&
+              Math.abs(entry.targetSlPrice - entry.executionPrice) / (entry.executionPrice || 1) <= 0.35;
+
             const slPrice =
-              entry.targetSlPrice ??
-              sig?.stopLoss ??
-              (isBuy ? entry.executionPrice - 10 : entry.executionPrice + 10);
+              isEntrySlValid && entry.targetSlPrice !== undefined && entry.targetSlPrice !== null
+                ? entry.targetSlPrice
+                : sig?.stopLoss ??
+                  (isBuy ? entry.executionPrice - 10 : entry.executionPrice + 10);
 
             const mult = getContractMultiplier(asset);
             const estimatedProfitUsd =
@@ -2522,14 +2564,31 @@ export function JournalDashboardClient({
                       <span className="block text-[10px] text-rose-400/90">
                         Tu SL Configurado
                       </span>
-                      <span className="font-mono text-sm font-bold text-rose-400">
-                        {(entry.targetSlPrice ?? sl).toFixed(2)}
-                      </span>
-                      <span className="block font-mono text-[10px] text-zinc-400">
-                        {Math.abs((entry.targetSlPrice ?? sl) - sl) < 0.05
-                          ? "= SL de Señal"
-                          : "SL Personalizado"}
-                      </span>
+                      {(() => {
+                        const isEntrySlValid =
+                          typeof entry.targetSlPrice === "number" &&
+                          !isNaN(entry.targetSlPrice) &&
+                          (direction === "BUY"
+                            ? entry.targetSlPrice < entry.executionPrice
+                            : entry.targetSlPrice > entry.executionPrice) &&
+                          Math.abs(entry.targetSlPrice - entry.executionPrice) / (entry.executionPrice || 1) <= 0.35;
+                        const displaySl =
+                          isEntrySlValid && entry.targetSlPrice !== undefined && entry.targetSlPrice !== null
+                            ? entry.targetSlPrice
+                            : sl;
+                        const isOriginalMatch = Math.abs(displaySl - sl) < 0.05;
+
+                        return (
+                          <>
+                            <span className="font-mono text-sm font-bold text-rose-400">
+                              {displaySl.toFixed(2)}
+                            </span>
+                            <span className="block font-mono text-[10px] text-zinc-400">
+                              {isOriginalMatch ? "= SL de Señal" : "SL Personalizado"}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <div>

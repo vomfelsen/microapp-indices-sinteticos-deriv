@@ -114,8 +114,17 @@ export function SignalCard({ signal }: SignalCardProps) {
   const [executionPrice, setExecutionPrice] = useState<string>(
     defaultExecPrice.toFixed(2)
   );
+  const isExistingSlValid = Boolean(
+    existing?.targetSlPrice !== undefined &&
+    existing?.targetSlPrice !== null &&
+    (signal.direction === "BUY"
+      ? existing.targetSlPrice < defaultExecPrice
+      : existing.targetSlPrice > defaultExecPrice) &&
+    Math.abs(existing.targetSlPrice - defaultExecPrice) / (defaultExecPrice || 1) <= 0.35
+  );
+
   const [targetSlPrice, setTargetSlPrice] = useState<string>(
-    existing?.targetSlPrice
+    isExistingSlValid && existing?.targetSlPrice
       ? existing.targetSlPrice.toFixed(2)
       : signal.stopLoss.toFixed(2)
   );
@@ -144,7 +153,10 @@ export function SignalCard({ signal }: SignalCardProps) {
     if (!existing?.session) {
       setTradingSession(live.session);
     }
-  }, [existing?.session]);
+    if (!existing || !isExistingSlValid) {
+      setTargetSlPrice(signal.stopLoss.toFixed(2));
+    }
+  }, [existing?.session, signal.id, signal.stopLoss, existing, isExistingSlValid]);
 
   const [followedPlan, setFollowedPlan] = useState<boolean>(
     existing?.followedPlan ?? true
